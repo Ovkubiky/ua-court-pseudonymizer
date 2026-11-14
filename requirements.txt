@@ -1,0 +1,6 @@
+pandas
+pyarrow
+matplotlib
+ipykernel
+pymorphy3
+pymorphy3-dicts-uk

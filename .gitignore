@@ -5,3 +5,5 @@ __pycache__/
 .ipynb_checkpoints/
 *.tmp
 .DS_Store
+baselines/ner_xlm_roberta*/
+*.safetensors

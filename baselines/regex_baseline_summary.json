@@ -1,0 +1,54 @@
+[
+  {
+    "split": "dev",
+    "documents": 300,
+    "final_score": 0.4519,
+    "relaxed_macro_precision": 0.45904166026907983,
+    "relaxed_macro_recall": 0.4475438002696474,
+    "relaxed_macro_f1": 0.45186437832540916,
+    "strict_macro_f1": 0.4006238219841671,
+    "deanonymization_risk": 0.07649723200805233,
+    "consistency_b3": 0.8670934716931838,
+    "runtime_seconds": 4.033,
+    "peak_traced_memory_mib": 2.28
+  },
+  {
+    "split": "test_a",
+    "documents": 526,
+    "final_score": 0.4562,
+    "relaxed_macro_precision": 0.4598459098028308,
+    "relaxed_macro_recall": 0.4652366063519621,
+    "relaxed_macro_f1": 0.4562398853532704,
+    "strict_macro_f1": 0.3991056495906916,
+    "deanonymization_risk": 0.09469417833456154,
+    "consistency_b3": 0.9261032493652895,
+    "runtime_seconds": 6.751,
+    "peak_traced_memory_mib": 3.29
+  },
+  {
+    "split": "test_b",
+    "documents": 377,
+    "final_score": 0.5226,
+    "relaxed_macro_precision": 0.5870084989426273,
+    "relaxed_macro_recall": 0.5208626456607509,
+    "relaxed_macro_f1": 0.52263035821872,
+    "strict_macro_f1": 0.4569582023393414,
+    "deanonymization_risk": 0.10040456050018388,
+    "consistency_b3": 0.9102186554915446,
+    "runtime_seconds": 6.994,
+    "peak_traced_memory_mib": 4.47
+  },
+  {
+    "split": "official",
+    "documents": 240,
+    "final_score": 0.4845,
+    "relaxed_macro_precision": 0.6311341054018209,
+    "relaxed_macro_recall": 0.4205285841625356,
+    "relaxed_macro_f1": 0.48454596905160136,
+    "strict_macro_f1": 0.39163917830415157,
+    "deanonymization_risk": 0.23781902552204176,
+    "consistency_b3": 0.8240628304333188,
+    "runtime_seconds": 3.041,
+    "peak_traced_memory_mib": 1.04
+  }
+]

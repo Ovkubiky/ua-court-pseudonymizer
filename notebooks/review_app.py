@@ -69,9 +69,19 @@ class H(BaseHTTPRequestHandler):
             return self.send({"fields": fields, "rows": rows})
         if u.path == "/api/doc":
             split = q.get("split", "dev"); ds = docs(split)
-            i = max(0, min(int(q.get("i", 0)), len(ds) - 1)); d = ds[i]
+            if q.get("id"):
+                matches = [n for n, row in enumerate(ds) if str(row["id"]) == str(q["id"])]
+                if not matches:
+                    return self.send({"error": f"Document ID {q['id']} was not found in split {split}",
+                                      "i": 0, "n": len(ds), "doc": ds[0],
+                                      "note": {}, "reviewed": sum(1 for x in ds if x["id"] in notes()),
+                                      "found": False})
+                i = matches[0]
+            else:
+                i = max(0, min(int(q.get("i", 0)), len(ds) - 1))
+            d = ds[i]
             return self.send({"i": i, "n": len(ds), "doc": d, "note": notes().get(d["id"], {}),
-                              "reviewed": sum(1 for x in ds if x["id"] in notes())})
+                              "reviewed": sum(1 for x in ds if x["id"] in notes()), "found": True})
         self.send_error(404)
 
     def do_POST(self):
@@ -135,6 +145,8 @@ textarea{width:100%;min-height:60px;font:inherit;color:var(--fg);background:var(
   <select id="split" onchange="loadDoc(0)"></select>
   <button onclick="loadDoc(cur.i-1)">← назад</button>
   <input id="num" type="number" min="1" style="width:90px" onchange="loadDoc(this.value-1)">
+  <input id="docid" type="text" placeholder="document_id" style="width:125px" onchange="loadDocById(this.value)">
+  <button onclick="loadDocById($("docid").value)">знайти за ID</button>
   <span id="pos" class="muted"></span>
   <button onclick="loadDoc(cur.i+1)">далі →</button>
   <div class="legend muted" style="margin-top:8px">
@@ -163,6 +175,14 @@ try{document.documentElement.dataset.theme=localStorage.theme||""}catch(e){}
 function tab(t){for(const x of["decl","docs"]){$(x).hidden=x!==t;$("t-"+x).classList.toggle("on",x===t)}if(t==="docs"&&!cur.doc)loadDoc(0)}
 async function post(url,obj){await fetch(url,{method:"POST",body:JSON.stringify(obj)})}
 async function loadDecl(){decl=(await (await fetch("/api/decl")).json()).rows;renderDecl()}
+async function loadDocById(id){
+ const split=$("split").value||"dev";
+ const d=await (await fetch(`/api/doc?split=${encodeURIComponent(split)}&id=${encodeURIComponent(id.trim())}`)).json();
+ if(!d.found){$("pos").textContent=d.error;return;}
+ cur={i:d.i,doc:d.doc};note=d.note||{};
+ $("num").value=d.i+1;$("docid").value=d.doc.id;$("pos").textContent=`з ${d.n} · переглянуто ${d.reviewed}`;
+ renderDoc(d);
+}
 function renderDecl(){
  const only=$("onlyTodo").checked, rows=decl.filter(r=>!only||r["перевірити"]==="так");
  $("declCount").textContent=`лишилось перевірити: ${decl.filter(r=>r["перевірити"]==="так").length} з ${decl.length}`;
@@ -181,6 +201,9 @@ async function approve(k,v){decl[k]["перевірити"]=v;await post("/api/d
 async function loadDoc(i){
  const split=$("split").value||"dev";const d=await (await fetch(`/api/doc?split=${split}&i=${i}`)).json();
  cur={i:d.i,doc:d.doc};note=d.note||{};$("num").value=d.i+1;$("pos").textContent=`з ${d.n} · переглянуто ${d.reviewed}`;
+ renderDoc(d);
+}
+function renderDoc(d){
  const t=d.doc.original;let html="",last=0;
  for(const a of [...d.doc.annotations].sort((x,y)=>x.start-y.start)){
   const typ=a.pseudonym.split("_")[0],clear=a.subtype==="clear_name",unsure=typ==="ОСОБА"&&!clear&&a.case_confident===false;

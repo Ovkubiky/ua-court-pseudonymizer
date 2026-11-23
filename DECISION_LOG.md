@@ -14,9 +14,12 @@
 | `notebooks/review_app.py` | Local page for reviewing the declension table and the generated documents |
 
 Setup:
-```bash
-python -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m ipykernel install --user --name nlp-anonymization --display-name "Python (nlp-anonymization)"
+
+Windows PowerShell:
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m ipykernel install --user --name nlp-anonymization --display-name "Python (nlp-anonymization)"
 ```
 
 The organizers' data is not in git. Put it under `data/`: `data/train/2024-court-decisions.parquet`, `data/test/court_cases.jsonl` and `data/evaluate.py`. Then run `generate_data.ipynb`. It reuses `data/synthetic/splits.csv` if that file exists and writes `data/synthetic/{train,dev,test_a,test_b}.jsonl` in about 20 s.

@@ -19,6 +19,9 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hybrid  # noqa: E402  (rules + boundary repair on top of the model)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_ID = "FacebookAI/xlm-roberta-base"
@@ -101,6 +104,12 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
+def pick_device(name: str) -> torch.device:
+    if name == "auto":
+        name = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.is_available() else "cpu")
+    return torch.device(name)
+
+
 class WindowDataset(Dataset):
     def __init__(self, rows: list[dict], tokenizer, max_length: int, stride: int, label2id: dict[str, int]):
         self.samples = []
@@ -165,6 +174,10 @@ def decode_bio(tags: list[str], offsets: list[tuple[int, int]]) -> list[tuple[in
             current_end = token_end
         elif tag.startswith("I-") and current_category == tag[2:] and current_start is not None:
             current_end = max(current_end, token_end)
+        elif tag.startswith("I-"):  # I- without a B- (window start, model slip): start a span instead of dropping it
+            if current_category is not None:
+                spans.append((current_start, current_end, current_category))
+            current_category, current_start, current_end = tag[2:], token_start, token_end
         else:
             if current_category is not None:
                 spans.append((current_start, current_end, current_category))
@@ -187,7 +200,8 @@ def merge_spans(spans: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]
 
 
 def predict_rows(model, tokenizer, rows: list[dict], max_length: int, stride: int,
-                 batch_size: int, device: torch.device) -> list[dict]:
+                 batch_size: int, device: torch.device, use_hybrid: bool = False,
+                 raw_sink: list | None = None) -> list[dict]:
     model.eval()
     id2label = {index: label for index, label in enumerate(LABELS)}
     predictions = []
@@ -221,6 +235,10 @@ def predict_rows(model, tokenizer, rows: list[dict], max_length: int, stride: in
                         decode_bio([id2label[tag] for tag in tags], offsets)
                     )
             spans = merge_spans(window_spans)
+            if raw_sink is not None:
+                raw_sink.append({"id": row["id"], "spans": [list(span) for span in spans]})
+            if use_hybrid:
+                spans = hybrid.combine(text, spans)
             annotations = assign_pseudonyms(text, spans)
             predictions.append({"id": row["id"], "annotations": annotations})
     return predictions
@@ -313,10 +331,17 @@ def hardware_info() -> dict:
 
 def train(args: argparse.Namespace) -> None:
     set_seed(args.seed)
-    train_path = ROOT / "data" / "synthetic" / "train.jsonl"
-    dev_path = ROOT / "data" / "synthetic" / "dev.jsonl"
+    data_dir = args.data_dir if args.data_dir.is_absolute() else ROOT / args.data_dir
+    train_path = data_dir / "train.jsonl"
+    dev_path = data_dir / "dev.jsonl"
     train_rows = load_jsonl(train_path)
     dev_rows = load_jsonl(dev_path)
+    if args.max_train_docs:
+        train_rows = random.Random(args.seed).sample(train_rows, min(args.max_train_docs, len(train_rows)))
+    if args.max_dev_docs:
+        dev_rows = dev_rows[:args.max_dev_docs]
+        dev_path = Path(str(dev_path) + f".first{args.max_dev_docs}")
+        write_jsonl(dev_path, dev_rows)
     validate_rows(train_rows, train_path)
     validate_rows(dev_rows, dev_path)
 
@@ -333,10 +358,10 @@ def train(args: argparse.Namespace) -> None:
         id2label=id2label,
         label2id=label2id,
     )
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = pick_device(args.device)
     model.to(device)
 
-    output_dir = ROOT / "baselines" / "ner_xlm_roberta"
+    output_dir = args.output_dir if args.output_dir.is_absolute() else ROOT / args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 
@@ -357,8 +382,11 @@ def train(args: argparse.Namespace) -> None:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
-            if torch.cuda.is_available():
+            if device.type == "cuda":
                 peak_allocated = max(peak_allocated, torch.cuda.max_memory_allocated())
+            if args.log_every and step % args.log_every == 0:
+                print(f"epoch={epoch} step={step}/{len(train_loader)} loss={epoch_loss / step:.4f} "
+                      f"elapsed={time.perf_counter() - started:.0f}s", flush=True)
         if len(train_loader) % args.gradient_accumulation:
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
@@ -426,11 +454,12 @@ def train(args: argparse.Namespace) -> None:
 
 
 def infer(args: argparse.Namespace) -> None:
+    data_dir = args.data_dir if args.data_dir.is_absolute() else ROOT / args.data_dir
     split_paths = {
-        "train": ROOT / "data" / "synthetic" / "train.jsonl",
-        "dev": ROOT / "data" / "synthetic" / "dev.jsonl",
-        "test_a": ROOT / "data" / "synthetic" / "test_a.jsonl",
-        "test_b": ROOT / "data" / "synthetic" / "test_b.jsonl",
+        "train": data_dir / "train.jsonl",
+        "dev": data_dir / "dev.jsonl",
+        "test_a": data_dir / "test_a.jsonl",
+        "test_b": data_dir / "test_b.jsonl",
         "official": ROOT / "data" / "test" / "court_cases.jsonl",
     }
     if args.split not in split_paths:
@@ -443,12 +472,14 @@ def infer(args: argparse.Namespace) -> None:
         checkpoint = ROOT / checkpoint
     tokenizer = AutoTokenizer.from_pretrained(checkpoint, use_fast=True, local_files_only=args.offline)
     model = AutoModelForTokenClassification.from_pretrained(checkpoint, local_files_only=args.offline)
-    device = torch.device("cpu" if args.cpu else ("cuda" if torch.cuda.is_available() else "cpu"))
+    device = torch.device("cpu") if args.cpu else pick_device(args.device)
     model.to(device)
     tracemalloc.start()
     started = time.perf_counter()
+    raw: list = []
     predictions = predict_rows(
         model, tokenizer, rows, args.max_length, args.stride, args.inference_batch_size, device,
+        use_hybrid=args.hybrid, raw_sink=raw,
     )
     duration = time.perf_counter() - started
     _, traced_peak = tracemalloc.get_traced_memory()
@@ -457,7 +488,10 @@ def infer(args: argparse.Namespace) -> None:
     if not output.is_absolute():
         output = ROOT / output
     write_jsonl(output, predictions)
+    if args.raw_output:
+        write_jsonl(args.raw_output if args.raw_output.is_absolute() else ROOT / args.raw_output, raw)
     print(json.dumps({
+        "hybrid": args.hybrid,
         "split": args.split,
         "document_count": len(predictions),
         "output": str(output),
@@ -471,10 +505,11 @@ def evaluate(args: argparse.Namespace) -> None:
     prediction_path = args.predictions
     if not prediction_path.is_absolute():
         prediction_path = ROOT / prediction_path
+    data_dir = args.data_dir if args.data_dir.is_absolute() else ROOT / args.data_dir
     truth_paths = {
-        "dev": ROOT / "data" / "synthetic" / "dev.jsonl",
-        "test_a": ROOT / "data" / "synthetic" / "test_a.jsonl",
-        "test_b": ROOT / "data" / "synthetic" / "test_b.jsonl",
+        "dev": data_dir / "dev.jsonl",
+        "test_a": data_dir / "test_a.jsonl",
+        "test_b": data_dir / "test_b.jsonl",
         "official": ROOT / "data" / "test" / "court_cases.jsonl",
     }
     truth = truth_paths[args.split]
@@ -524,6 +559,12 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--max-length", type=int, default=256)
     train_parser.add_argument("--stride", type=int, default=128)
     train_parser.add_argument("--inference-batch-size", type=int, default=16)
+    train_parser.add_argument("--data-dir", type=Path, default=Path("data/synthetic"), help="synthetic data version to train on")
+    train_parser.add_argument("--output-dir", type=Path, default=Path("baselines/ner_xlm_roberta"))
+    train_parser.add_argument("--device", default="auto", help="auto | cuda | mps | cpu")
+    train_parser.add_argument("--max-train-docs", type=int, default=0, help="random subset of train (smoke runs)")
+    train_parser.add_argument("--max-dev-docs", type=int, default=0, help="first N dev documents for epoch selection")
+    train_parser.add_argument("--log-every", type=int, default=0)
     train_parser.set_defaults(func=train)
 
     infer_parser = subparsers.add_parser("infer", help="Write JSONL predictions for a split")
@@ -535,12 +576,19 @@ def build_parser() -> argparse.ArgumentParser:
     infer_parser.add_argument("--inference-batch-size", type=int, default=16)
     infer_parser.add_argument("--cpu", action="store_true")
     infer_parser.add_argument("--offline", action="store_true")
+    infer_parser.add_argument("--device", default="auto", help="auto | cuda | mps | cpu (--cpu overrides)")
+    infer_parser.add_argument("--data-dir", type=Path, default=Path("data/synthetic"))
+    infer_parser.add_argument("--hybrid", action=argparse.BooleanOptionalAction, default=True,
+                              help="apply scripts/hybrid.py (boundary repair + rules); --no-hybrid = model only")
+    infer_parser.add_argument("--raw-output", type=Path, default=None,
+                              help="also write the raw model spans (for scripts/hybrid_eval.py ablation)")
     infer_parser.set_defaults(func=infer)
 
     evaluate_parser = subparsers.add_parser("evaluate", help="Evaluate JSONL predictions with data/evaluate.py")
     evaluate_parser.add_argument("--split", choices=("dev", "test_a", "test_b", "official"), required=True)
     evaluate_parser.add_argument("--predictions", type=Path, required=True)
     evaluate_parser.add_argument("--output", type=Path, required=True)
+    evaluate_parser.add_argument("--data-dir", type=Path, default=Path("data/synthetic"))
     evaluate_parser.set_defaults(func=evaluate)
     return parser
 

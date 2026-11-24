@@ -107,6 +107,27 @@ The inflected forms come from `name_declensions.csv`. It holds 144 rows generate
 
 The format is the same as the official test (`id`, `original`, `annotations`). Every set scores 1.0 against itself with `evaluate.py`, which confirms the format and offsets are correct.
 
+## Stage 5: data v2 (more variety)
+
+The v1 generator drew every person from ~24 first names and ~20 surnames per pool, every street from 15 names, and
+filled unknown `ІНФОРМАЦІЯ` with a birth date even inside `ПрАТ «…»`. The official test was built from a large name
+dictionary and a postal address base, and the v1 model's recall there was 0.47 (АДРЕСА) and 0.42 (ІНФОРМАЦІЯ).
+
+**Decisions (`DATA_VERSION = 2`, same documents and splits as v1):**
+- **Names** from `lang-uk/name_freq_dict_uk`, inflected by `pymorphy3` (`scripts/build_resources.py`): 2,467 surnames,
+  512 first names, 864 patronymics; sampled by sqrt(frequency) capped at the 90th percentile so politicians at the
+  head of the list do not dominate. Train / eval pools split by a hash of the lemma (no overlap, checked by
+  `verify_synthetic_data.py`). Two more surface forms: `Прізвище Ім'я`, `Ім'я Прізвище`.
+- **Addresses**: 3,527 street names and 805 villages with district + oblast mined from clear-text organisation
+  addresses in train documents (names only, never full addresses; dev / test documents excluded). ~12 shapes,
+  house numbers like `12-А`, `12/3`. After `уродженця`, `жителя`, `в`, `у` only a settlement is generated: that is
+  how the register uses `АДРЕСА` there.
+- **`ІНФОРМАЦІЯ`**: company names after `ТОВ / ПрАТ / АТ «`, titles after `під назвою «`, generated brigades /
+  ТЦК names, logins; birth / death keywords extended (`народився`, `загинув`, `ОСОБА_1 (`).
+- **Formats**: 8 date, 8 phone, 5 passport formats; `року` stays outside the span when the text already has it.
+
+v1 output is kept for comparison; both versions are in the HF artifacts repo.
+
 ## Known limitations and next steps
 
 - **Unsure cases.** About 25% of name gaps are unsure and default to the nominative.

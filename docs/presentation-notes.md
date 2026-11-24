@@ -152,7 +152,7 @@ NER annotations.
 | Data sizes | Complete | README, quality report, notebook |
 | Entity distributions | Complete | quality report, enhanced EDA |
 | Domain shift | Complete | data statistics and quality report |
-| Synthetic methodology | Complete | README and DECISION_LOG |
+| Synthetic methodology | Complete | README and docs/DECISION_LOG.md |
 | Representative examples | Prepared | review sample and dev JSONL |
 | Manual linguistic review | In progress | 20-document review sample |
 
@@ -272,7 +272,7 @@ It does **not** prove model quality.
 - `data/evaluate.py`
 - `data/sample_submission.jsonl`
 - `scripts/verify_synthetic_data.py`
-- `QUALITY_REPORT.md`
+- `docs/data-quality.md`
 
 ### Evidence status
 
@@ -293,7 +293,7 @@ It does **not** prove model quality.
 
 The 20-document dev sample is in:
 
-- `MANUAL_REVIEW.md`
+- `docs/manual-review.md`
 - `data/synthetic/manual_review_sample.csv`
 
 The sample is automatically risk-ranked using:

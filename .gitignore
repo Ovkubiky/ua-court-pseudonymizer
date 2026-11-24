@@ -1,9 +1,19 @@
-# organizers' data and everything we generate from it (large; see DECISION_LOG.md → How to run)
+# Data and generated artifacts live in the HF dataset repo ovkubiky/ua-court-pseudonymizer-artifacts (see README).
+# organizers' data and everything we generate from it
 data/
+# model checkpoints and predictions
+baselines/ner_*/
+baselines/regex/
+preds/
+*.safetensors
+# generator resources rebuilt by scripts/build_resources.py
+notebooks/resources/name_lexicon.csv
+notebooks/resources/streets.csv
+notebooks/resources/settlements.csv
+
 .venv/
 __pycache__/
 .ipynb_checkpoints/
+.pytest_cache/
 *.tmp
 .DS_Store
-baselines/ner_xlm_roberta*/
-*.safetensors

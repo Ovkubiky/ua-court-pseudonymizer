@@ -126,7 +126,7 @@ def main() -> None:
             "issue": "Limited name inventory",
             "frequency": "24 given names and 32 surnames per gender, approximately",
             "impact": "Synthetic documents may encourage memorization of a small name set.",
-            "evidence": "DECISION_LOG.md and name-declension table.",
+            "evidence": "docs/DECISION_LOG.md and name-declension table.",
             "current_resolution": "Train/test names come from separate pools.",
             "next_action": "Integrate lang-uk/name_freq_dict_uk.",
             "status": "Planned",
@@ -144,7 +144,7 @@ def main() -> None:
             "issue": "Official test domain shift",
             "frequency": "240 decisions; 97.5% Supreme Court cassation",
             "impact": "A court-model may not generalize to the broad training domain.",
-            "evidence": "data_stats.ipynb and DECISION_LOG.md.",
+            "evidence": "data_stats.ipynb and docs/DECISION_LOG.md.",
             "current_resolution": "Stratify synthetic sets across proceeding type and instance.",
             "next_action": "Compare in-domain and cross-domain results.",
             "status": "Measured",
@@ -253,7 +253,7 @@ def main() -> None:
         "- `data/synthetic/quality_issues.csv`: issue, frequency, evidence, and remediation.",
     ]
 
-    report_path = ROOT / "QUALITY_REPORT.md"
+    report_path = ROOT / "docs" / "data-quality.md"
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"Wrote {report_path}")
     print(f"Wrote {stats_csv}")

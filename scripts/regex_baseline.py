@@ -15,6 +15,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DECLENSIONS = ROOT / "notebooks" / "resources" / "name_declensions.csv"
 OUTPUT_DIR = ROOT / "baselines"
+DOCS_DIR = ROOT / "docs" / "baselines"  # report + summary (in git)
+PRED_DIR = ROOT / "baselines" / "regex"  # predictions: not in git (HF artifacts repo, baselines/regex/)
 
 CYRILLIC_WORD = r"[А-ЯІЇЄҐ][А-ЯІЇЄҐа-яіїєґ'’ʼ\-]*"
 PATRONYMIC_END = (
@@ -301,7 +303,8 @@ def evaluate_split(name: str, path: Path) -> dict:
     result["runtime_seconds"] = round(elapsed, 3)
     result["peak_traced_memory_mib"] = round(peak_bytes / 1024 / 1024, 2)
 
-    output_path = OUTPUT_DIR / f"regex_{name}_submission.jsonl"
+    PRED_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = PRED_DIR / f"regex_{name}_submission.jsonl"
     with output_path.open("w", encoding="utf-8") as handle:
         for prediction in predictions:
             handle.write(json.dumps(prediction, ensure_ascii=False) + "\n")
@@ -408,15 +411,15 @@ def main() -> None:
         full_results[name] = result
         summaries.append(compact_summary(name, result))
 
-    (OUTPUT_DIR / "regex_baseline_results.json").write_text(
+    (PRED_DIR / "regex_baseline_results.json").write_text(
         json.dumps(full_results, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    (OUTPUT_DIR / "regex_baseline_summary.json").write_text(
+    (DOCS_DIR / "regex_summary.json").write_text(
         json.dumps(summaries, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    (OUTPUT_DIR / "REGEX_BASELINE.md").write_text(
+    (DOCS_DIR / "regex.md").write_text(
         markdown_report(summaries),
         encoding="utf-8",
     )

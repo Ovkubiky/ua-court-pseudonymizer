@@ -59,76 +59,22 @@ def verify_annotation_offsets(row: dict) -> None:
 
 
 def verify_name_pool_separation() -> None:
-    declension_path = ROOT / "notebooks" / "resources" / "name_declensions.csv"
-    if not declension_path.exists():
-        raise AssertionError(f"Missing name-declension table: {declension_path}")
+    """Prove that the first names and surnames the generator can draw for train never appear in the eval pool
+    (dev keeps the train pool; test_a / test_b use the eval pool). Uses the generator's own tables (v2 lexicon)."""
+    sys.path.insert(0, str(ROOT / "notebooks"))
+    import synth_utils as su
 
-    # Read the actual name inventory once. The generator uses even/odd row
-    # positions per gender, so reconstruct that rule and prove the pools differ.
-    first_names = {"ч": [], "ж": []}
-    patronymics = {"ч": [], "ж": []}
-    surnames = {"ч": [], "ж": []}
-    with declension_path.open(encoding="utf-8-sig", newline="") as handle:
-        for row in csv.DictReader(handle):
-            if row["тип"] == "ім'я":
-                first_names[row["стать"]].append(row["називний"].strip())
-            elif row["тип"] == "по батькові":
-                patronymics[row["стать"]].append(row["називний"].strip())
-            elif row["тип"] == "прізвище":
-                surnames[row["стать"]].append(row["називний"].strip())
-
-    train_names = {
-        name
-        for gender_names in first_names.values()
-        for name in gender_names[0::2]
-    }
-    eval_names = {
-        name
-        for gender_names in first_names.values()
-        for name in gender_names[1::2]
-    }
-    overlap = train_names & eval_names
-    if overlap:
-        raise AssertionError(
-            f"Train/evaluation first-name pools overlap: {sorted(overlap)}"
-        )
-
-    train_surnames = {
-        name
-        for gender_names in surnames.values()
-        for name in gender_names[0::2]
-    }
-    eval_surnames = {
-        name
-        for gender_names in surnames.values()
-        for name in gender_names[1::2]
-    }
-    overlap = train_surnames & eval_surnames
-    if overlap:
-        raise AssertionError(
-            f"Train/evaluation surname pools overlap: {sorted(overlap)}"
-        )
-
-    # Patronymics are not currently split in make_person(), so they are allowed
-    # to overlap; this is reported rather than silently misrepresenting it.
-    patronymic_overlap = {
-        name
-        for gender_names in patronymics.values()
-        for name in gender_names
-    }
-
-    print(
-        f"name pools: train={len(train_names)}, eval={len(eval_names)}, "
-        "no first-name overlap"
-    )
-    print(
-        f"surname pools: train={len(train_surnames)}, eval={len(eval_surnames)}, "
-        "no surname overlap"
-    )
-    print(
-        f"patronymics: {len(patronymic_overlap)} unique nominative forms; "
-        "the current generator does not separate patronymic pools"
-    )
+    tab = su.load_name_tables(ROOT / "notebooks" / "resources")
+    pick = tab["_pick"]
+    first = {pool: {f[0] for g in ("ч", "ж") for f in pick[f"name_{g}"][pool][0]} for pool in ("train", "eval")}
+    surn = {pool: {s["ч"][0] for s in pick["surname"][pool][0]} for pool in ("train", "eval")}
+    for kind, pools in (("first-name", first), ("surname", surn)):
+        overlap = pools["train"] & pools["eval"]
+        if overlap:
+            raise AssertionError(f"Train/evaluation {kind} pools overlap: {sorted(overlap)[:20]}")
+        print(f"{kind} pools: train={len(pools['train'])}, eval={len(pools['eval'])}, no overlap")
+    print(f"patronymics: {len(pick['patronymic_ч']['train'][0]) + len(pick['patronymic_ж']['train'][0])} forms, "
+          "shared by both pools (a patronymic alone does not identify a test person)")
 
 
 def verify_pseudonym_consistency(row: dict) -> None:

@@ -101,50 +101,108 @@ The file `data/evaluate.py` implements the task's official scoring:
 The `pseudonymized` and `annotations` fields must remain test-only. They must never be
 used for model training or parameter selection.
 
+
+The organizers' Google Drive folder also contains two earlier versions of the test
+(`6.10.2026_court_cases.jsonl`, `8.10.2026_court_cases.jsonl`). `court_cases.jsonl` is the
+latest one (a few annotation fixes); always evaluate on it.
+
 ### Training data
 
-The organizer-provided court corpus is
-`data/train/2024-court-decisions.parquet`. It contains 44,758 deduplicated Ukrainian
-court decisions from 2024. The texts contain placeholders instead of PII, for example
-`ОСОБА_1`, `АДРЕСА_2`, and `НОМЕР_1`.
+The organizer-provided court corpus is `data/train/2024-court-decisions.parquet`. It
+contains 44,758 deduplicated Ukrainian court decisions from 2024. The texts contain
+placeholders instead of PII, for example `ОСОБА_1`, `АДРЕСА_2`, and `НОМЕР_1`. It is
+converted into labelled synthetic data by `notebooks/generate_data.ipynb`.
 
-The corpus is not yet the final model-training set. It is converted into labelled
-synthetic data by `notebooks/generate_data.ipynb`.
+The public NER datasets proposed in the task description (NER-UK 2.0, Ukr-Synth,
+Polyglot-NER, WikiAnn) are not used yet.
 
-The following public NER datasets are proposed in the task description but are not yet
-used in the current implementation:
+### External resources
 
-- NER-UK 2.0;
-- Ukr-Synth;
-- Polyglot-NER;
-- WikiAnn.
+| Resource | Used for | Licence |
+|---|---|---|
+| [`lang-uk/name_freq_dict_uk`](https://github.com/lang-uk/name_freq_dict_uk) | first names, patronymics and surnames of the v2 generator | GPL-3.0 |
+| clear-text organisation / court addresses in the training corpus | street and settlement names of the v2 generator | — |
+
+Only street and settlement *names* are mined, never full addresses, and only from documents
+that are not in our dev / test splits.
+
+## Getting the Data
+
+Git holds code, hand-made resources and documentation only. Everything that a command can regenerate
+(synthetic data, generator resources, predictions, model checkpoints) lives in the private HF dataset repo
+[`ovkubiky/ua-court-pseudonymizer-artifacts`](https://huggingface.co/datasets/ovkubiky/ua-court-pseudonymizer-artifacts):
+
+```bash
+hf auth login
+hf download ovkubiky/ua-court-pseudonymizer-artifacts --repo-type dataset --local-dir artifacts
+mkdir -p data/synthetic data/synthetic_v1
+cp artifacts/synthetic/v2/* data/synthetic/ && cp artifacts/synthetic/v1/* data/synthetic_v1/
+cp artifacts/resources/*.csv notebooks/resources/
+```
+
+Upload new checkpoints / predictions to `models/<name>/` and `preds/<name>/` of the same repo.
+The official test and the organizers' parquet are not stored there; get them from the organizers:
+
+```bash
+# organizer files (Google Drive folder from the task description)
+uvx gdown --folder "https://drive.google.com/drive/folders/1T7Ub_6xuS5zwP5LioX745dnfQ5JrGkEg" -O data
+# name dictionary for the v2 generator
+git clone --depth 1 https://github.com/lang-uk/name_freq_dict_uk data/external/name_freq_dict_uk
+```
+
+Expected layout:
+
+```text
+data/train/2024-court-decisions.parquet
+data/test/court_cases.jsonl
+data/evaluate.py
+data/sample_submission.jsonl
+data/external/name_freq_dict_uk/
+```
 
 ## Synthetic Data Generation
 
-`notebooks/generate_data.ipynb` creates:
+`notebooks/generate_data.ipynb` creates (document IDs fixed by `data/synthetic/splits.csv`):
 
 | Dataset | Documents | Purpose |
 |---|---:|---|
 | `train` | 4,895 | Model training |
-| `dev` | 300 | Development and manual inspection |
+| `dev` | 300 | Checkpoint selection, rule design, manual inspection |
 | `test_a` | 526 | Internal stratified test set |
 | `test_b` | 377 | Rare-subtype test set |
 
-Each document is assigned to exactly one split. The split is keyed by document ID,
-and each generated document is reproducible using a seed derived from its ID.
-
-The synthetic pipeline:
+Generation is deterministic: each document is seeded by its ID, so the same code produces
+the same files byte for byte. The pipeline:
 
 1. fills placeholders with fictional names and values;
-2. applies case and gender rules to Ukrainian person names;
-3. inflects names using `pymorphy3`;
-4. labels clear-text names that remain in the original training data;
-5. generates valid dates, IBANs, РНОКПП values, addresses, and IDs;
-6. writes character-level annotations;
-7. checks all JSONL rows with the official evaluator format.
+2. applies case and gender rules to Ukrainian person names (`pymorphy3` + context rules);
+3. labels clear-text names that remain in the original training data;
+4. generates valid dates, IBANs (mod-97), РНОКПП (checksum), addresses, and IDs;
+5. writes character-level annotations and checks them with the official evaluator.
 
-The test-side name lists are separate from the train-side name lists, so a test name
-does not appear in the synthetic training set.
+### Data versions
+
+The notebook setting `DATA_VERSION` selects the generator.
+
+| | v1 (`data/synthetic_v1/`) | v2 (`data/synthetic/`, default) |
+|---|---|---|
+| Surnames / first names per pool | 20 / 24 | 1,255 / 274 (train), 1,223 / 242 (eval) |
+| Patronymics | 32 | 868 |
+| Name surface forms | full, `Прізвище І.П.`, `І.П. Прізвище` | + `Прізвище Ім'я`, `Ім'я Прізвище` |
+| Streets | 15 | 3,527 mined, with street type (вул., просп., пров., бульв., пл., …) |
+| Address shapes | 3 street styles × 3 orders | ~12 shapes, house numbers `12-А`, `12/3`, village + district + oblast, settlement-only addresses after `уродженця`, `жителя`, `в`, `у` |
+| `ІНФОРМАЦІЯ` | dates, 8 unit names, e-mail, URL, nick | + company names after `ТОВ / ПрАТ / АТ «…»`, titles after `під назвою «…»`, generated units / ТЦК names, logins; unknown subtype is no longer always a birth date |
+| Dates / phones / passports | 4 / 3 / 2 formats | 8 / 8 / 5 formats; `року` stays outside the span when the text already has it |
+
+Train and eval name pools are split by a hash of the lemma; `scripts/verify_synthetic_data.py`
+proves that they do not overlap. Rebuild the v2 resources with:
+
+```bash
+python scripts/build_resources.py   # writes notebooks/resources/{name_lexicon,streets,settlements}.csv
+```
+
+The inflected lexicon is automatic (pymorphy3), not manually reviewed like
+`name_declensions.csv`; surnames that pymorphy3 cannot inflect for both genders are dropped.
 
 ## Known Data Findings
 
@@ -152,135 +210,144 @@ does not appear in the synthetic training set.
 - `ІНФОРМАЦІЯ` is mostly birth dates and institution/unit names.
 - `НОМЕР` includes phones, РНОКПП values, license plates, IBANs, and passports.
 - Real judge, clerk, lawyer, and notary names remain in some training documents.
+- The register also leaves some personal e-mails and РНОКПП unmasked; the synthetic gold
+  misses them, so a few "false positives" on synthetic data are real PII.
 - The official test is mostly Supreme Court cassation decisions, while training spans
   multiple courts and proceeding types.
 - About 25% of synthetic name-case decisions are not confident and fall back to the
-  nominative case.
-- Feminine accusative names are the weakest case for the current rules.
+  nominative case. Feminine accusative names are the weakest case.
 - Clear-text surname-only or first-name-only names are not fully detected.
 
-These findings must be reported as limitations, not as if they were solved.
+Enhanced exploratory analysis: [`notebooks/enhanced_eda.ipynb`](notebooks/enhanced_eda.ipynb).
+Data quality report: [`docs/data-quality.md`](docs/data-quality.md) (written for v1).
 
-Enhanced exploratory analysis is available in
-[`notebooks/enhanced_eda.ipynb`](/D:/УКУ/4%20курс/NLP/project/ua-court-pseudonymizer/notebooks/enhanced_eda.ipynb).
-The generated quality assessment is documented in
-[`QUALITY_REPORT.md`](/D:/УКУ/4%20курс/NLP/project/ua-court-pseudonymizer/QUALITY_REPORT.md),
-with machine-readable summary and issue tables in `data/synthetic/quality_report.csv`
-and `data/synthetic/quality_issues.csv`.
+## Models
 
-## Regex Baseline
+### Regex baseline
 
-A deterministic rule-only baseline is implemented in
-[`scripts/regex_baseline.py`](/D:/УКУ/4%20курс/NLP/project/ua-court-pseudonymizer/scripts/regex_baseline.py).
-It uses regular expressions, the reviewed Ukrainian name table, and no model,
-GPU, API, or network access.
+[`scripts/regex_baseline.py`](scripts/regex_baseline.py): regular expressions plus the
+reviewed name table; no model. Results in [`docs/baselines/regex.md`](docs/baselines/regex.md).
+Official relaxed macro F1 0.4845. **Caveat:** the "improved" regex rules were compared on the
+official test, so that number is exploratory, not a clean held-out score.
 
-Run all internal splits and the official test:
+### Neural NER baseline
 
-```powershell
-.venv\Scripts\python scripts\regex_baseline.py
+[`scripts/ner_baseline.py`](scripts/ner_baseline.py): `FacebookAI/xlm-roberta-base` with a
+BIO token-classification head, trained on v1 synthetic data (RTX 4090, 26 min).
+Results in [`docs/baselines/ner.md`](docs/baselines/ner.md).
+
+| Official test (single final run) | P | R | F1 |
+|---|---:|---:|---:|
+| ОСОБА | 0.991 | 0.931 | 0.960 |
+| АДРЕСА | 0.879 | 0.468 | 0.611 |
+| НОМЕР | 0.927 | 0.772 | 0.843 |
+| ІНФОРМАЦІЯ | 0.946 | 0.417 | 0.579 |
+| **Macro** | | | **0.748** (strict 0.663) |
+
+CPU inference on the official test: 21 min, 1.7 GB RSS.
+
+The trained weights are **not** in git. Checkpoints go to `models/` of the HF artifacts repo;
+place the selected one in `baselines/ner_xlm_roberta/selected/` (or pass `--checkpoint`).
+
+### Hybrid layer
+
+[`scripts/hybrid.py`](scripts/hybrid.py) post-processes the model spans:
+
+1. **boundary repair**: spans are grown to whole words, stripped of punctuation and
+   quotes, the final dot is kept only for initials / abbreviations, address pieces split by
+   `, ` and name pieces split by a space are joined;
+2. **rules** for fixed-shape PII: IBAN (mod-97; State Treasury and court / prosecutor
+   accounts excluded), РНОКПП (keyword or checksum), phones (court / fax / office numbers
+   excluded), passports and ID cards (keyword), plates, military-unit numbers, personal
+   e-mails (role mailboxes and legal-entity addresses excluded), social-network URLs,
+   `@nicknames`, birth / death dates (keyword or directly after a person);
+3. **merge**: a rule span replaces overlapping model spans, except that persons and
+   addresses keep digits inside them.
+
+Rules were designed on train / dev data only. Rule precision (IoU ≥ 0.5) on the internal
+sets: РНОКПП 0.97–0.99, IBAN 1.00, plates 0.98–1.00 (0.72 on dev, where fleet lists of
+company vehicles are unlabelled), phones 0.90–1.00, passports 1.00.
+
+`ner_baseline.py infer` applies the hybrid layer by default (`--no-hybrid` switches it off)
+and can save the raw model spans (`--raw-output`) for ablations:
+
+```bash
+python scripts/hybrid_eval.py rules --truth data/synthetic/dev.jsonl
+python scripts/hybrid_eval.py ablation --truth data/synthetic/dev.jsonl --raw dev.raw.jsonl
 ```
 
-Run only the official test:
+`hybrid_eval.py` refuses the official test unless `--final` is passed.
 
-```powershell
-.venv\Scripts\python scripts\regex_baseline.py --official-only
+## Setup
+
+macOS / Linux:
+
+```bash
+python -m venv .venv            # or: uv venv --python 3.12 .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m ipykernel install --user --name nlp-anonymization --display-name "Python (nlp-anonymization)"
 ```
 
-The results and submission files are written to `baselines/`:
+Windows PowerShell: the same with `.venv\Scripts\python`.
 
-- `REGEX_BASELINE.md`: summary and interpretation;
-- `regex_baseline_summary.json`: compact metrics;
-- `regex_baseline_results.json`: full per-type metrics;
-- `regex_<split>_submission.jsonl`: predicted annotations.
+## Reproducing Everything
 
-## Reproducing Synthetic Data
+```bash
+python scripts/build_resources.py                       # v2 resources (needs data/external/name_freq_dict_uk)
+cd notebooks && python -m jupyter nbconvert --to notebook --execute generate_data.ipynb --inplace && cd ..
+python scripts/verify_synthetic_data.py                 # offsets, self-check 1.0, split / name-pool separation
+python -m pytest -q tests
 
-Windows PowerShell:
+# training (GPU; --device mps works on Apple Silicon but is slow)
+python scripts/ner_baseline.py train --data-dir data/synthetic --output-dir baselines/ner_xlm_roberta_v2 \
+  --seed 42 --epochs 3 --batch-size 8 --gradient-accumulation 2 --learning-rate 2e-5 \
+  --max-length 256 --stride 128
 
-```powershell
-python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
-.venv\Scripts\python -m ipykernel install --user --name nlp-anonymization --display-name "Python (nlp-anonymization)"
+# internal evaluation (raw spans saved for the hybrid ablation)
+python scripts/ner_baseline.py infer --split dev --checkpoint baselines/ner_xlm_roberta_v2/selected \
+  --output preds/dev.jsonl --raw-output preds/dev.raw.jsonl
+python scripts/hybrid_eval.py ablation --truth data/synthetic/dev.jsonl --raw preds/dev.raw.jsonl
+
+# official test: once, after all choices are fixed
+python scripts/ner_baseline.py infer --split official --cpu --offline \
+  --checkpoint baselines/ner_xlm_roberta_v2/selected --output preds/official.jsonl
+python data/evaluate.py data/test/court_cases.jsonl preds/official.jsonl
 ```
 
-Place the organizer files in:
+Manual review UI: `cd notebooks && python review_app.py`, then open `http://localhost:8765`.
 
-```text
-data/train/2024-court-decisions.parquet
-data/test/court_cases.jsonl
-data/evaluate.py
-```
+Rebuild the EDA notebook and the quality report:
 
-Open `notebooks/generate_data.ipynb`, select the `nlp-anonymization` kernel, and run
-all cells. The notebook writes:
-
-```text
-data/synthetic/splits.csv
-data/synthetic/train.jsonl
-data/synthetic/dev.jsonl
-data/synthetic/test_a.jsonl
-data/synthetic/test_b.jsonl
-```
-
-Review notes are optional and are created only when a reviewer saves a decision
-through `notebooks/review_app.py`.
-
-Run the structural and anti-leakage verification:
-
-```powershell
-.venv\Scripts\python scripts\verify_synthetic_data.py
-```
-
-To launch the manual review tool:
-
-```powershell
-cd notebooks
-..\.venv\Scripts\python review_app.py
-```
-
-Open `http://localhost:8765`.
-
-To rebuild the enhanced EDA notebook and quality report:
-
-```powershell
-.venv\Scripts\python scripts\build_enhanced_eda.py
-.venv\Scripts\python scripts\build_quality_report.py
-
-cd notebooks
-..\.venv\Scripts\python -m jupyter nbconvert --execute enhanced_eda.ipynb --to notebook --inplace --ExecutePreprocessor.timeout=600
+```bash
+python scripts/build_enhanced_eda.py
+python scripts/build_quality_report.py
 ```
 
 ## Current Implementation Status
 
-Completed:
+Done:
 
-- data-source analysis;
-- train/test EDA;
-- synthetic split construction;
-- placeholder replacement;
-- name case and gender rules;
-- clear-text name labelling;
-- address-region handling;
-- self-check against `data/evaluate.py`;
-- a local manual-review UI.
+- data-source analysis and train / test EDA;
+- synthetic data v1 and v2 (larger name lexicon, mined addresses, more formats);
+- case and gender rules, clear-text name labelling, address-region handling;
+- self-check against `data/evaluate.py`, split and name-pool separation checks;
+- manual review of 20 dev documents ([`docs/manual-review.md`](docs/manual-review.md));
+- regex baseline;
+- neural NER baseline (XLM-R base, v1 data): official relaxed F1 0.748;
+- hybrid layer: rules for structured PII and span-boundary repair;
+- CPU / RAM / time check of the neural baseline (21 min, 1.7 GB).
 
-In progress:
+Next:
 
-- manual verification of synthetic documents;
-- review of uncertain declensions;
-- quality analysis of rare subtypes.
-
-Remaining:
-
-- baseline NER implementation;
-- model fine-tuning;
-- actual strict and relaxed F1 measurements;
-- deanonymization-risk and consistency measurements;
-- cosine-similarity evaluation;
-- CPU/RAM/time validation;
-- Docker or another offline deployment method;
-- final submission and interim PDF presentation.
+- retrain XLM-R on v2 data; compare v1-trained vs v2-trained on both internal test versions;
+- hybrid ablation on dev / test_a / test_b with the new model;
+- person-mention linking (`Петренко О.О.` ↔ `Петренка Олега Олеговича`) to cut
+  deanonymization risk and raise consistency;
+- cosine-similarity evaluation (`data/evaluate.py --cosine`);
+- a single CLI + Docker image with the model inside (offline);
+- public NER datasets / other models (`uk_ner_web_trf_13class`, spaCy, Stanza) as comparisons;
+- choose an open licence and add a `LICENSE` file;
+- final submission and presentation.
 
 ## Evaluation
 
@@ -289,41 +356,44 @@ and output format, not model quality.
 
 The primary ranking metric is relaxed NER macro F1 over the four PII categories.
 Strict F1, deanonymization risk, consistency, and cosine similarity are also available
-from `data/evaluate.py`.
+from `data/evaluate.py`:
 
-Example:
-
-```powershell
-python data/evaluate.py data/test/court_cases.jsonl submission.jsonl
+```bash
+python data/evaluate.py data/test/court_cases.jsonl submission.jsonl [--cosine]
 ```
 
 ## Anti-Leakage Rules
 
-- Never use official-test `annotations` for training or tuning.
-- Never use official-test `pseudonymized` text as training labels.
-- Never tune hyperparameters on the official test.
-- Keep all splits disjoint by document ID.
+- Never use official-test `annotations` or `pseudonymized` text for training, rule design or tuning.
+- Never tune hyperparameters, thresholds or rules on the official test.
+- Keep all splits disjoint by document ID; reuse `data/synthetic/splits.csv`.
 - Keep synthetic test names outside the synthetic training name pool.
-- Reuse `data/synthetic/splits.csv` unless an explicit, documented split rebuild is needed.
 - Report the official-test result only after model selection and training are fixed.
 
 ## Repository Layout
 
 | Path | Purpose |
 |---|---|
-| `DECISION_LOG.md` | Decisions, experiments, and synthetic-data methodology |
+| `docs/DECISION_LOG.md` | Decisions, experiments, and synthetic-data methodology |
+| `docs/data-quality.md`, `docs/manual-review.md` | Synthetic-data quality report and manual review |
+| `docs/baselines/` | Regex and NER baseline reports |
+| `docs/presentation-notes.md` | Interim presentation facts and slide outline |
 | `notebooks/data_stats.ipynb` | Exploratory data analysis |
-| `notebooks/generate_data.ipynb` | Synthetic training-data pipeline |
+| `notebooks/generate_data.ipynb` | Synthetic training-data pipeline (`DATA_VERSION` 1 / 2) |
 | `notebooks/synth_utils.py` | Generation and name-inflection logic |
-| `notebooks/resources/name_declensions.csv` | Reviewed Ukrainian name forms |
+| `notebooks/resources/name_declensions.csv` | Reviewed Ukrainian name forms (v1 + v2) |
+| `notebooks/resources/name_lexicon.csv`, `streets.csv`, `settlements.csv` | v2 resources, built by `scripts/build_resources.py` (not in git) |
 | `notebooks/case_eval/` | Real-name gold set and Lapa comparison |
 | `notebooks/review_app.py` | Local manual-review application |
-| `data/evaluate.py` | Official task evaluator |
-| `PRESENTATION_EVIDENCE.md` | Interim presentation facts and slide outline |
-| `MANUAL_REVIEW.md` | Manual-review scope and selected dev sample |
-| `data/synthetic/manual_review_sample.csv` | Machine-readable manual-review checklist |
+| `scripts/build_resources.py` | Builds the v2 resources |
+| `scripts/regex_baseline.py` | Regex baseline |
+| `scripts/ner_baseline.py` | XLM-R training / inference / evaluation |
+| `scripts/hybrid.py`, `scripts/hybrid_eval.py` | Hybrid layer and its evaluation |
+| `scripts/verify_synthetic_data.py` | Structural and anti-leakage checks |
+| `data/evaluate.py` | Official task evaluator (not in git) |
 
 ## License
 
-The project code must remain open and licenced for reuse. Dataset licences and personal
-data-handling restrictions must be included before final release.
+No licence has been chosen yet; the task requires publishing the solution under an open
+licence, so a `LICENSE` file must be added before the final release. Note that
+`lang-uk/name_freq_dict_uk` is GPL-3.0 and dataset licences must be listed in the release.

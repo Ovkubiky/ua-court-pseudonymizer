@@ -51,9 +51,14 @@ def classify(text: str) -> tuple[str, str]:
 
 # ---------------------------------------------------------------- subtypes by left context (same as data_stats §8)
 SUB_RULES = {
-    "ІНФОРМАЦІЯ": [("death_date", r"(помер\w*|смерт\w*)[^.]{0,40}$"), ("birth_date", r"ОСОБА_\d+\s*,\s*$|народж|р\.\s?н\."),
-                   ("email", r"[eе]-?mail|пошт"), ("url", r"http|www|сайт"), ("nickname", r"\bнік\b|нікнейм|акаунт|телеграм|telegram|instagram|facebook|viber"),
-                   ("unit_or_institution", r"(начальник|командир|військов|частин|в/ч|ТЦК|центр|управлін|відділ|госпітал|КНП|ТОВ|комісі)\w*\W{0,4}$|[«\"]\s*$")],
+    "ІНФОРМАЦІЯ": [("death_date", r"(помер\w*|смерт\w*|загину\w*|загибел\w*)[^.]{0,40}$"),
+                   ("birth_date", r"ОСОБА_\d+\s*[,(]\s*$|народж|народи\w+|р\.\s?н\."),
+                   ("email", r"[eе]-?mail|пошт"), ("url", r"http|www|сайт|посиланн"),
+                   ("nickname", r"\bнік\b|нікнейм|акаунт|логін\w*|псевдонім\w*|телеграм|telegram|instagram|facebook|viber"),
+                   ("unit_or_institution", r"(начальник|командир|військов|частин|в/ч|ТЦК|центр|управлін|відділ|госпітал|КНП|комісі)\w*\W{0,4}$"),
+                   # v2: organisation names in quotes after a legal form ("ПрАТ « __ »") and titles ("під назвою « __ »")
+                   ("company", r"(?:\b(?:ТОВ|ПрАТ|ПАТ|АТ|КБ|АБ|ПП|ФГ|ДП|КП|СТОВ|ТзОВ)|магазин\w*|компані\w*|підприємств\w*|кафе|ресторан\w*)\s*[«\"“„]\s*$"),
+                   ("title", r"назв\w*:?\s*[«\"“„]\s*$")],
     "НОМЕР": [("ipn", r"ІПН|РНОКПП|ідентифікаційн|облікової картки"), ("passport", r"паспорт"), ("phone", r"тел\.|телефон|моб"),
               ("iban", r"IBAN|рахун"), ("plate", r"номерн\w* знак|д\.?н\.?з|реєстраційн\w* номер|автомобіл|транспортн"),
               ("military_unit", r"в/ч|військов\w* частин|ВЧ"), ("certificate", r"посвідчен|свідоцтв|сері")],
@@ -233,7 +238,67 @@ def _half(lst, pool):
     return lst[0::2] if pool == "train" else lst[1::2]
 
 
+def _pool_of(lemma: str) -> str:
+    """Stable train / eval assignment of a lexicon entry (v2): by a hash of its lemma, not by list position."""
+    import hashlib
+    return "train" if int(hashlib.md5(lemma.lower().encode()).hexdigest(), 16) % 2 == 0 else "eval"
+
+
+def load_name_tables(res_dir: Path) -> dict:
+    """v2 name tables: the reviewed table (name_declensions.csv) + the automatic lexicon (name_lexicon.csv, built by
+    scripts/build_resources.py from lang-uk/name_freq_dict_uk). Every entry carries a weight (sqrt of corpus frequency,
+    so frequent names dominate but the long tail is still sampled) and a pool ("train" / "eval")."""
+    base = load_declensions(res_dir / "name_declensions.csv")
+    tab = {"version": 2, "name": {"ч": [], "ж": []}, "patronymic": {"ч": [], "ж": []}, "surname": []}
+    seen = set()
+    for g in ("ч", "ж"):
+        for forms in base["name"][g]:
+            tab["name"][g].append((forms, 1e-3, _pool_of(forms[0]))); seen.add(("name", g, forms[0]))
+    for pair in base["patronymic"]:
+        for g in ("ч", "ж"):
+            tab["patronymic"][g].append((pair[g], 1e-3, "both")); seen.add(("patronymic", g, pair[g][0]))
+    for pair in base["surname"]:
+        tab["surname"].append((pair, 1e-3, _pool_of(pair["ч"][0]))); seen.add(("surname", pair["ч"][0]))
+    lex = res_dir / "name_lexicon.csv"
+    if lex.exists():
+        surn: dict[str, dict] = {}
+        for r in csv.DictReader(open(lex, encoding="utf-8")):
+            forms, w = [r[c].strip() for c in CASES], float(r["частота"]) ** .5
+            if r["тип"] == "ім'я" and ("name", r["стать"], forms[0]) not in seen:
+                tab["name"][r["стать"]].append((forms, w, _pool_of(r["лема"])))
+            elif r["тип"] == "по батькові" and ("patronymic", r["стать"], forms[0]) not in seen:
+                tab["patronymic"][r["стать"]].append((forms, w, "both"))
+            elif r["тип"] == "прізвище":
+                surn.setdefault(r["лема"], {"w": w})[r["стать"]] = forms
+        for lemma, d in surn.items():
+            if "ч" in d and "ж" in d and ("surname", d["ч"][0]) not in seen:
+                tab["surname"].append(({"ч": d["ч"], "ж": d["ж"]}, d["w"], _pool_of(lemma)))
+    # sampling lists per pool: (items, weights). Weights are capped at the 90th percentile so that the head of the
+    # frequency list (politicians: Тимошенко, Порошенко, ...) does not dominate the synthetic persons.
+    def lists(entries):
+        ws = sorted(w for _, w, _ in entries)
+        cap = ws[int(.9 * (len(ws) - 1))] if ws else 1
+        out = {}
+        for pool in ("train", "eval"):
+            sel = [(f, min(w, cap)) for f, w, p in entries if p in (pool, "both")]
+            out[pool] = ([f for f, _ in sel], [w for _, w in sel])
+        return out
+    tab["_pick"] = {"surname": lists(tab["surname"]),
+                    **{f"name_{g}": lists(tab["name"][g]) for g in ("ч", "ж")},
+                    **{f"patronymic_{g}": lists(tab["patronymic"][g]) for g in ("ч", "ж")}}
+    return tab
+
+
+def _pick(tab, key, pool, rng):
+    items, weights = tab["_pick"][key][pool]
+    return rng.choices(items, weights=weights)[0]
+
+
 def make_person(tab: dict, rng: random.Random, pool: str = "train") -> dict:
+    if tab.get("version") == 2:
+        s = _pick(tab, "surname", pool, rng)
+        return {g: {"surname": s[g], "name": _pick(tab, f"name_{g}", pool, rng),
+                    "patronymic": _pick(tab, f"patronymic_{g}", pool, rng)} for g in ("ч", "ж")}
     s, p = rng.choice(_half(tab["surname"], pool)), rng.choice(tab["patronymic"])
     return {g: {"surname": s[g], "name": rng.choice(_half(tab["name"][g], pool)), "patronymic": p[g]} for g in ("ч", "ж")}
 
@@ -243,7 +308,9 @@ def render_name(p: dict, case: str, rng: random.Random) -> str:
     s, n, pt = p["surname"][i], p["name"][i], p["patronymic"][i]
     a, b = p["name"][0][0], p["patronymic"][0][0]
     initials = rng.choice([f"{a}. {b}.", f"{a}.{b}."])
-    return rng.choices([f"{s} {n} {pt}", f"{s} {initials}", f"{initials} {s}"], weights=[6, 3, 1])[0]
+    # v2 adds "Прізвище Ім'я" and "Ім'я Прізвище" (seen in court texts for persons without a known patronymic)
+    return rng.choices([f"{s} {n} {pt}", f"{s} {initials}", f"{initials} {s}", f"{s} {n}", f"{n} {s}"],
+                       weights=[6, 3, 1, .4, .2])[0]
 
 
 L_PLATE = "АВЕІКМНОРСТХ"
@@ -298,9 +365,13 @@ TRANSLIT = str.maketrans({"а": "a", "б": "b", "в": "v", "г": "h", "ґ": "g",
                           "я": "ia", "'": ""})
 
 
-def _date(rng, y0, y1):
+def _date(rng, y0, y1, right: str = ""):
     y, m, d = rng.randint(y0, y1), rng.randint(1, 12), rng.randint(1, 28)
-    return rng.choice([f"{d:02d}.{m:02d}.{y}", f"{y}-{m:02d}-{d:02d}", f"{d} {UA_MONTHS[m-1]} {y} року", f"{d:02d}.{m:02d}.{y} р."])
+    if re.match(r"\s*(року|р\.|рік)", right):  # "ІНФОРМАЦІЯ_1 року народження": the year word stays outside the span
+        return rng.choices([f"{d:02d}.{m:02d}.{y}", f"{d} {UA_MONTHS[m-1]} {y}", f"{y}"], weights=[5, 3, 1])[0]
+    return rng.choices([f"{d:02d}.{m:02d}.{y}", f"{y}-{m:02d}-{d:02d}", f"{d} {UA_MONTHS[m-1]} {y} року", f"{d:02d}.{m:02d}.{y} р.",
+                        f"{d:02d}.{m:02d}.{y} року", f"{d:02d}.{m:02d}.{y}р.", f"{d} {UA_MONTHS[m-1]} {y} р.", f"{d}.{m}.{y}"],
+                       weights=[6, 1, 3, 2, 1, .5, 1, .5])[0]
 
 
 def ipn(rng):
@@ -313,9 +384,19 @@ def iban(rng):
     return f"UA{98 - int(bban + '301000') % 97:02d}{bban}"  # U=30, A=10, "00"
 
 
-def gen_number(sub: str | None, rng: random.Random) -> str:
+def gen_number(sub: str | None, rng: random.Random, version: int = 1) -> str:
     L = lambda n: "".join(rng.choice(L_PLATE) for _ in range(n))
     D = lambda n: "".join(str(rng.randint(0, 9)) for _ in range(n))
+    if version == 2 and sub in ("phone", "passport", "plate", "iban", "id_card"):
+        op = rng.choice(["67", "50", "63", "93", "97", "66", "68", "73", "95", "99", "98"])
+        return {
+            "phone": rng.choice([f"+380{op}{D(7)}", f"0{op}{D(7)}", f"(0{op}) {D(3)}-{D(2)}-{D(2)}", f"+38 (0{op}) {D(3)}-{D(2)}-{D(2)}",
+                                 f"+38(0{op}){D(7)}", f"0{op}-{D(3)}-{D(2)}-{D(2)}", f"+380 {op} {D(3)} {D(2)} {D(2)}", f"0{op} {D(3)} {D(4)}"]),
+            "passport": rng.choice([f"{L(2)} {D(6)}", f"{L(2)}{D(6)}", f"{L(2)} № {D(6)}", f"{L(2)} №{D(6)}", D(9)]),
+            "plate": rng.choice([f"{L(2)}{D(4)}{L(2)}", f"{L(2)} {D(4)} {L(2)}", f"{L(2)}{D(4)}{L(2)}"]),
+            "iban": rng.choice([iban(rng)] * 3 + [" ".join([(s := iban(rng))[:4]] + [s[i:i + 4] for i in range(4, len(s), 4)])]),
+            "id_card": D(9),
+        }[sub]
     return {
         "ipn": ipn(rng), "iban": iban(rng), "id_card": D(9), "military_unit": "А" + D(4),
         "passport": rng.choice([f"{L(2)} {D(6)}", f"{L(2)}{D(6)}"]),
@@ -326,14 +407,70 @@ def gen_number(sub: str | None, rng: random.Random) -> str:
     }.get(sub or "other", rng.choice([D(rng.randint(6, 10)), f"{L(2)}{D(6)}"]))
 
 
-def gen_info(sub: str | None, rng: random.Random, surname: str | None = None) -> str:
+def gen_info(sub: str | None, rng: random.Random, surname: str | None = None, left: str = "", right: str = "",
+             version: int = 1) -> str:
     nick = (surname or "user").lower().translate(TRANSLIT) + str(rng.randint(1, 99))
-    return {
-        "birth_date": _date(rng, 1940, 2006), "death_date": _date(rng, 2000, 2024),
-        "email": f"{nick}@{rng.choice(['ukr.net', 'gmail.com', 'i.ua'])}",
-        "url": f"https://{rng.choice(['facebook.com', 'instagram.com', 't.me'])}/{nick}", "nickname": "@" + nick,
-        "unit_or_institution": rng.choice(UNIT_NAMES),
-    }.get(sub or "other", _date(rng, 1940, 2006))
+    if version == 1:
+        return {
+            "birth_date": _date(rng, 1940, 2006), "death_date": _date(rng, 2000, 2024),
+            "email": f"{nick}@{rng.choice(['ukr.net', 'gmail.com', 'i.ua'])}",
+            "url": f"https://{rng.choice(['facebook.com', 'instagram.com', 't.me'])}/{nick}", "nickname": "@" + nick,
+            "unit_or_institution": rng.choice(UNIT_NAMES),
+        }.get(sub or "other", _date(rng, 1940, 2006))
+    quoted = bool(re.search(r"[«\"“„]\s*$", left))
+    if sub == "other" or not sub:
+        sub = "title" if quoted else "birth_date"
+    nick2 = rng.choice([nick, nick.replace("1", "_"), (surname or "user")[:3].lower().translate(TRANSLIT) + rng.choice(["_ua", "777", "_pro", "x", "2000"])])
+    gen = {
+        "birth_date": lambda: _date(rng, 1940, 2006, right), "death_date": lambda: _date(rng, 1995, 2024, right),
+        "email": lambda: f"{rng.choice([nick, nick2, nick.replace('1', '.')])}@{rng.choice(['ukr.net', 'gmail.com', 'i.ua', 'meta.ua', 'outlook.com', 'yahoo.com', 'email.ua'])}",
+        "url": lambda: rng.choice([f"https://{rng.choice(['facebook.com', 'www.facebook.com', 'instagram.com', 'www.instagram.com', 't.me', 'tiktok.com/@', 'x.com'])}/{nick2}".replace("@/", "@"),
+                                   f"https://{nick2}.{rng.choice(['com.ua', 'in.ua', 'blogspot.com'])}",
+                                   f"www.{rng.choice(['facebook.com', 'instagram.com'])}/{nick2}"]),
+        "nickname": lambda: (nick2 if quoted else rng.choice(["@" + nick2, nick2, nick2.capitalize()])),
+        "unit_or_institution": lambda: gen_unit(rng),
+        "company": lambda: gen_company(rng), "title": lambda: rng.choice([gen_company(rng), gen_title(rng)]),
+    }
+    return gen.get(sub, gen["birth_date"])()
+
+
+# v2: institutions, military units, companies and titles are built combinatorially instead of an 8-item list
+_ORD = ["1", "3", "10", "14", "24", "28", "30", "47", "53", "58", "59", "72", "80", "92", "93", "95", "110", "112", "115", "128", "155", "211"]
+_BRIG = ["окрема механізована бригада", "окрема штурмова бригада", "окрема десантно-штурмова бригада", "окрема танкова бригада",
+         "окрема артилерійська бригада", "окрема бригада територіальної оборони", "окрема гірсько-штурмова бригада",
+         "окрема бригада морської піхоти", "окремий батальйон територіальної оборони", "окремий полк зв'язку", "прикордонний загін"]
+_OBL_ADJ = ["Київський", "Львівський", "Харківський", "Одеський", "Дніпропетровський", "Полтавський", "Вінницький", "Житомирський",
+            "Черкаський", "Сумський", "Волинський", "Рівненський", "Хмельницький", "Чернігівський", "Закарпатський"]
+_DIST_ADJ = ["Шевченківський", "Солом'янський", "Подільський", "Галицький", "Франківський", "Центральний", "Індустріальний",
+             "Бориспільський", "Броварський", "Білоцерківський", "Самбірський", "Стрийський", "Ковельський", "Уманський", "Лубенський"]
+
+
+def gen_unit(rng: random.Random) -> str:
+    return rng.choice([
+        lambda: f"{rng.choice(_ORD)} {rng.choice(_BRIG)}",
+        lambda: f"{rng.choice(_DIST_ADJ)} районний територіальний центр комплектування та соціальної підтримки",
+        lambda: f"{rng.choice(_OBL_ADJ)} обласний ТЦК та СП",
+        lambda: f"{rng.choice(_DIST_ADJ)} РТЦК та СП",
+        lambda: rng.choice(UNIT_NAMES),
+        lambda: f"{rng.choice(['Військово-медичний клінічний центр', 'Військовий госпіталь', 'Госпіталь ветеранів війни'])} {rng.choice(['Західного', 'Південного', 'Центрального', 'Північного', 'Східного'])} регіону",
+    ])()
+
+
+_CO_A = ["Агро", "Укр", "Буд", "Енерго", "Тех", "Транс", "Мега", "Нова", "Світ", "Лайф", "Еко", "Альфа", "Дельта", "Прайм", "Сіті", "Голд"]
+_CO_B = ["інвест", "сервіс", "трейд", "буд", "постач", "профі", "мережа", "груп", "лайн", "капітал", "холдинг", "маркет", "плюс", "телеком"]
+
+
+def gen_company(rng: random.Random) -> str:
+    a, b = rng.choice(_CO_A), rng.choice(_CO_B)
+    return rng.choice([f"{a}{b}", f"{a}-{b.capitalize()}", f"{a}{b.capitalize()}", f"{a} {b.capitalize()}",
+                       f"{rng.choice(['Західний', 'Східний', 'Перший', 'Український', 'Київський'])} {rng.choice(['Альянс', 'Дім', 'Центр', 'Стандарт', 'Капітал'])}",
+                       f"{a}{b} {rng.choice(['Україна', 'ЛТД', 'Груп'])}"])
+
+
+def gen_title(rng: random.Random) -> str:
+    return rng.choice([f"{rng.choice(['Новини', 'Події', 'Правда', 'Голос', 'Вісті'])} {rng.choice(['Полісся', 'Поділля', 'регіону', 'громади', 'міста'])}",
+                       f"{rng.choice(['Чорна', 'Біла', 'Стара', 'Тиха'])} {rng.choice(['гавань', 'зоря', 'хвиля', 'долина'])}",
+                       f"{rng.choice(_CO_A)}{rng.choice(_CO_B)}"])
 
 
 def gen_address(rng: random.Random, region: int | None = None, near: dict | None = None) -> tuple[str, dict]:
@@ -356,6 +493,95 @@ def gen_address(rng: random.Random, region: int | None = None, near: dict | None
         out = [p for p in [parts["idx"] if parts["order"] < .25 else None, parts["city"], street, parts["obl"]] if p]
     else:
         out = [street, parts["city"]] + ([parts["obl"]] if parts["obl"] else [])
+    return ", ".join(out), parts
+
+
+# ---------------------------------------------------------------- v2 addresses
+_ADDR_RES: dict | None = None
+_STREET_ABBR = {"вулиця": ["вул.", "вул.", "вул.", "вулиця"], "проспект": ["просп.", "проспект", "пр-т", "пр."],
+                "провулок": ["пров.", "провулок"], "бульвар": ["бульв.", "бульвар", "б-р"], "площа": ["пл.", "площа"],
+                "майдан": ["майдан"], "узвіз": ["узвіз"], "шосе": ["шосе"], "набережна": ["набережна"]}
+
+
+def _gen2nom(adj_gen: str) -> str:
+    """Броварського -> Броварський, Київської -> Київська."""
+    return re.sub(r"ого$", "ий", re.sub(r"ої$", "а", adj_gen))
+
+
+def load_address_resources(res_dir: Path) -> dict:
+    """streets.csv / settlements.csv from scripts/build_resources.py, settlements grouped by REGIONS index."""
+    global _ADDR_RES
+    streets = [(r["тип"], r["назва"], float(r["частота"]) ** .5) for r in csv.DictReader(open(res_dir / "streets.csv", encoding="utf-8"))]
+    by_region: dict[int, list] = {}
+    for r in csv.DictReader(open(res_dir / "settlements.csv", encoding="utf-8")):
+        obl = _gen2nom(r["область_род"]) + " область"
+        idx = next((i for i, (o, _, _) in enumerate(REGIONS) if o == obl), None)
+        if idx is not None:
+            by_region.setdefault(idx, []).append((r["тип"], r["назва"], r["район_род"], r["область_род"]))
+    _ADDR_RES = {"streets": ([s[:2] for s in streets], [s[2] for s in streets]), "settlements": by_region}
+    return _ADDR_RES
+
+
+SETTLEMENT_CTX = re.compile(r"(уродж\w*|жител\w*|мешкан\w*|населен\w* пункт\w*|поблизу|біля|околиц\w*|території|\bв|\bу|\bселі|\bмісті)\s*$", re.I)
+
+
+def _house(rng):
+    n = rng.choices([rng.randint(1, 40), rng.randint(1, 200)], weights=[3, 2])[0]
+    return rng.choices([f"{n}", f"{n}-{rng.choice('АБВГ')}", f"{n}{rng.choice('абв')}", f"{n}/{rng.randint(1, 30)}", f"{n} {rng.choice('АБ')}"],
+                       weights=[10, 2, 1, 1.5, .5])[0]
+
+
+def gen_address_v2(rng: random.Random, region: int | None = None, near: dict | None = None, left: str = "") -> tuple[str, dict]:
+    """Address with mined street / settlement names and ~12 surface formats. `left` = text before the placeholder:
+    after "уродженця", "жителя", "в", "у" ... only a settlement is generated (that is how the register uses АДРЕСА there)."""
+    res = _ADDR_RES
+    if near:
+        parts = {**near, "flat": rng.randint(1, 200)}
+    else:
+        if region is None or rng.random() > .85:
+            region = rng.randrange(len(REGIONS))
+        obl, _, places = REGIONS[region]
+        rural = res["settlements"].get(region) if res else None
+        only_settlement = bool(SETTLEMENT_CTX.search(left[-40:])) and "адрес" not in left[-25:].lower()
+        if rural and rng.random() < (.7 if only_settlement else .3):
+            kind, name, dist, obl_gen = rng.choice(rural)
+            city, idx, district = f"{kind} {name}", None, dist
+        else:
+            city, idx = places[0] if rng.random() < .6 else rng.choice(places)
+            district, obl_gen = None, None
+        (skind, sname) = rng.choices(*res["streets"])[0] if res else ("вулиця", rng.choice(STREETS))
+        parts = {"city": city, "obl": obl, "obl_gen": obl_gen, "district": district, "idx": idx,
+                 "street": f"{rng.choice(_STREET_ABBR.get(skind, [skind]))} {sname}", "house": _house(rng),
+                 "flat": rng.randint(1, 250) if rng.random() < .6 else None, "only_settlement": only_settlement,
+                 "style": rng.randrange(4), "order": rng.randrange(6), "ukraine": rng.random() < .05}
+    p = parts
+    if p["only_settlement"]:
+        if p["district"]:
+            return rng.choice([f"{p['city']} {p['district']} району {p['obl_gen']} області",
+                               f"{p['city']}, {_gen2nom(p['district'])} район, {_gen2nom(p['obl_gen'])} область",
+                               f"{p['city']} {p['district']} р-ну {p['obl_gen']} обл."]), parts
+        return (p["city"] if not p["obl"] or rng.random() < .6 else f"{p['city']}, {p['obl']}"), parts
+    house = [f"буд. {p['house']}", f"будинок {p['house']}", f"{p['house']}", f"б. {p['house']}"][p["style"]]
+    street = f"{p['street']}, {house}"
+    if p["flat"]:
+        street += [", кв. ", ", квартира ", ", кв. ", ", кв."][p["style"]] + str(p["flat"])
+    region_tail = ([f"{p['district']} району", f"{p['obl_gen']} області"] if p["district"] else [p["obl"]] if p["obl"] else [])
+    region_head = ([f"{_gen2nom(p['obl_gen'])} область", f"{_gen2nom(p['district'])} район"] if p["district"] else [p["obl"]] if p["obl"] else [])
+    o = p["order"]
+    if o == 0:
+        out = [street, p["city"]] + region_tail
+    elif o == 1:
+        out = [p["city"], street]
+    elif o == 2:
+        out = ([p["idx"]] if p["idx"] else []) + [p["city"], street]
+    elif o == 3:
+        out = region_head + [p["city"], street]
+    elif o == 4:
+        out = ([p["idx"]] if p["idx"] else []) + region_head + [p["city"], street]
+    else:
+        out = [p["city"], street] + region_tail
+    if p["ukraine"]:
+        out = ["Україна"] + out
     return ", ".join(out), parts
 
 
@@ -412,11 +638,15 @@ def assemble_doc(doc_id, text: str, tab: dict, ann: dict | None, rng: random.Ran
         if label not in values:  # one placeholder = one value within the document
             sub = "" if typ == "АДРЕСА" else (ann.get("subtype", {}).get(label) or subtype_by_context(text, m.start(), typ))
             first = next(iter(persons.values()), None)
+            left, right = text[max(0, m.start() - 80):m.start()], text[m.end():m.end() + 20]
             if typ == "АДРЕСА":
                 prev = re.search(r"(АДРЕСА_\d+)\s*(?:,|та|і|й)\s*$", text[max(0, m.start() - 30):m.start()])
-                value, addr_parts[label] = gen_address(rng, region, addr_parts.get(prev.group(1)) if prev else None)
+                near = addr_parts.get(prev.group(1)) if prev else None
+                value, addr_parts[label] = (gen_address_v2(rng, region, near, left) if tab.get("version") == 2
+                                            else gen_address(rng, region, near))
             else:
-                value = (gen_number(sub, rng) if typ == "НОМЕР" else gen_info(sub, rng, first["surname"][0] if first else None))
+                value = (gen_number(sub, rng, tab.get("version", 1)) if typ == "НОМЕР" else
+                         gen_info(sub, rng, first["surname"][0] if first else None, left, right, tab.get("version", 1)))
             values[label] = (value, sub)
         value, sub = values[label]
         edits.append((m.start(), m.end(), value, label, {"subtype": sub} if sub else {}))

@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEV_PATH = ROOT / "data" / "synthetic" / "dev.jsonl"
 OUTPUT_CSV = ROOT / "data" / "synthetic" / "manual_review_sample.csv"
-OUTPUT_MD = ROOT / "MANUAL_REVIEW.md"
+OUTPUT_MD = ROOT / "docs" / "manual-review.md"
 
 
 def load_rows() -> list[dict]:

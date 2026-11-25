@@ -14,19 +14,19 @@ model quality: no baseline or fine-tuned NER model has been evaluated yet.
 | test_a | 526 | 9649 | 18.34 | 8139 | 1396 | 1452 | 1835 |
 | test_b | 377 | 14505 | 38.47 | 7987 | 1865 | 1371 | 699 |
 
-## Official Test Coverage
+## Reference Test Coverage
 
 - Documents: 240.
 - Total annotations: 3685.
 
-| PII type | Official-test mentions |
+| PII type | Reference-test mentions |
 |---|---:|
 | ОСОБА | 2837 |
 | АДРЕСА | 233 |
 | НОМЕР | 447 |
 | ІНФОРМАЦІЯ | 168 |
 
-The official test contains a malformed leading-space address string in one raw count;
+The reference test contains a malformed leading-space address string in one raw count;
 normalized generated counts use exact PII prefixes.
 
 ## PII Subtypes
@@ -104,8 +104,8 @@ normalized generated counts use exact PII prefixes.
 | Clear-text names | 16010 annotations. Subtype clear_name in synthetic annotations. | A model can learn to ignore public names that remain in training text. | Detected initialism/full-name patterns are labelled. | Add surname-only and first-name-only detection. | Partial |
 | Address-region mismatch | Not yet measured from saved annotations. Generator uses document region for 85% of addresses. | Generated addresses may be geographically inconsistent. | Region detection is used during generation. | Measure detected-region/address consistency on all splits. | Partially implemented |
 | Limited name inventory | 24 given names and 32 surnames per gender, approximately. docs/DECISION_LOG.md and name-declension table. | Synthetic documents may encourage memorization of a small name set. | Train/test names come from separate pools. | Integrate lang-uk/name_freq_dict_uk. | Planned |
-| Small official-test type coverage | 168 ІНФОРМАЦІЯ entities. Official test statistics. | Subtype-level conclusions have wide confidence intervals. | Rare-subtype test_b is used for internal measurement. | Report confidence intervals and per-subtype errors. | Mitigated |
-| Official test domain shift | 240 decisions; 97.5% Supreme Court cassation. data_stats.ipynb and docs/DECISION_LOG.md. | A court-model may not generalize to the broad training domain. | Stratify synthetic sets across proceeding type and instance. | Compare in-domain and cross-domain results. | Measured |
+| Small reference-test type coverage | 168 ІНФОРМАЦІЯ entities. Reference test statistics. | Subtype-level conclusions have wide confidence intervals. | Rare-subtype test_b is used for internal measurement. | Report confidence intervals and per-subtype errors. | Mitigated |
+| Reference test domain shift | 240 decisions; 97.5% Supreme Court cassation. data_stats.ipynb and docs/DECISION_LOG.md. | A court-model may not generalize to the broad training domain. | Stratify synthetic sets across proceeding type and instance. | Compare in-domain and cross-domain results. | Measured |
 
 ## Case-Rule Findings
 
@@ -130,7 +130,7 @@ normalized generated counts use exact PII prefixes.
 3. Expand name, patronymic, and surname coverage.
 4. Improve clear-text surname-only and first-name-only name detection.
 5. Add per-subtype precision and recall after baseline training.
-6. Keep official-test annotations locked from training and tuning.
+6. Keep reference-test annotations locked from training and tuning.
 
 ## Machine-Readable Outputs
 

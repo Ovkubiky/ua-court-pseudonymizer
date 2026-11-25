@@ -7,7 +7,7 @@ Outputs (all in notebooks/resources/):
                       the training corpus;
 - settlements.csv   - villages / towns with district and oblast, mined from the training corpus.
 
-Mining uses only documents that are NOT in our dev / test_a / test_b splits, and never touches the official test.
+Mining uses only documents that are NOT in our dev / test_a / test_b splits, and never touches the reference test.
 Only street and settlement *names* are kept, never full addresses.
 
 Run:  python scripts/build_resources.py

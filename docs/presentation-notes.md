@@ -61,7 +61,7 @@ One JSONL record per document with character offsets and pseudonyms:
 - No paid external inference API.
 - CPU only.
 - 8 GB RAM maximum.
-- Complete official test in no more than two hours.
+- Complete reference test in no more than two hours.
 - Offline deployment without runtime data downloads.
 
 ### Scope boundaries
@@ -91,7 +91,7 @@ Out of scope:
 
 ## 2. Data Understanding
 
-### Official test data
+### Reference test data
 
 Source: `data/test/court_cases.jsonl`
 
@@ -105,7 +105,7 @@ Source: `data/test/court_cases.jsonl`
 | `ІНФОРМАЦІЯ_*` | 168 |
 | Unique persons | 864 |
 
-The official test is mostly a 97.5% Supreme Court cassation/court domain, while
+The reference test is mostly a 97.5% Supreme Court cassation/court domain, while
 training covers broader court types and instances.
 
 ### Training source
@@ -139,11 +139,11 @@ NER annotations.
 
 ### Representative findings
 
-- 48% of official-test persons appear in 2–5 surface forms in one document.
+- 48% of reference-test persons appear in 2–5 surface forms in one document.
 - `ІНФОРМАЦІЯ` is dominated by birth dates and unit/institution names.
 - `НОМЕР` includes IBAN, phone, IPN, passport, plate, certificate, and unit numbers.
 - Real public names remain clear in 64% of training documents.
-- The official test is small for `ІНФОРМАЦІЯ`; subtype confidence intervals are wide.
+- The reference test is small for `ІНФОРМАЦІЯ`; subtype confidence intervals are wide.
 
 ### Evidence status
 
@@ -210,7 +210,7 @@ Priority order:
 - Train/dev split only.
 - Ablation: nominative names versus rule-inflected names.
 - Ablation: with/without clear-text names.
-- Full official test evaluation only after model selection.
+- Full reference test evaluation only after model selection.
 - CPU, RAM, and runtime benchmarking.
 
 ### Evidence status
@@ -249,7 +249,7 @@ Additional metrics:
 
 ### Evaluation data
 
-- Official test: 240 documents.
+- Reference test: 240 documents.
 - Internal dev: 300 documents.
 - Internal test_a: 526 documents.
 - Internal test_b: 377 documents.
@@ -319,7 +319,7 @@ The sample is covered by automated verification for:
 - valid PII prefixes;
 - no overlap;
 - no split overlap;
-- no official-test overlap;
+- no reference-test overlap;
 - no train/eval first-name overlap.
 
 ## 6. Anti-Leakage Evidence
@@ -334,7 +334,7 @@ Verified:
 - dev versus test_a;
 - dev versus test_b;
 - test_a versus test_b;
-- all synthetic splits versus official test.
+- all synthetic splits versus reference test.
 
 ### Name isolation
 
@@ -346,7 +346,7 @@ Verified:
 
 ### Test-only fields
 
-The official test fields `pseudonymized` and `annotations` are excluded from synthetic
+The reference test fields `pseudonymized` and `annotations` are excluded from synthetic
 training generation and model tuning.
 
 ### Verification command
@@ -362,7 +362,7 @@ Suggested slides:
 1. Title and team.
 2. Problem, motivation, and scope.
 3. Input/output example.
-4. Official test statistics.
+4. Reference test statistics.
 5. Training corpus and synthetic generation process.
 6. Train/dev/test_a/test_b split explanation.
 7. Representative synthetic document example.

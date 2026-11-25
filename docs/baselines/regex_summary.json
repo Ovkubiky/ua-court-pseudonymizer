@@ -39,7 +39,7 @@
     "peak_traced_memory_mib": 4.47
   },
   {
-    "split": "official",
+    "split": "reference",
     "documents": 240,
     "final_score": 0.4845,
     "relaxed_macro_precision": 0.6311341054018209,

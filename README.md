@@ -245,8 +245,14 @@ Results in [`docs/baselines/ner.md`](docs/baselines/ner.md).
 
 CPU inference on the reference test: 21 min, 1.7 GB RSS.
 
-The trained weights are **not** in git. Checkpoints go to `models/` of the HF artifacts repo;
-place the selected one in `baselines/ner_xlm_roberta/selected/` (or pass `--checkpoint`).
+The trained weights are **not** in git. The published checkpoint is
+[`ua-court-pseudonymizer/xlm-roberta-base-ua-pseudonymizer`](https://huggingface.co/ua-court-pseudonymizer/xlm-roberta-base-ua-pseudonymizer):
+
+```bash
+hf download ua-court-pseudonymizer/xlm-roberta-base-ua-pseudonymizer --local-dir baselines/ner_xlm_roberta/selected
+```
+
+Other checkpoints go to `models/` of the HF artifacts repo. Pass `--checkpoint` to use a different directory.
 
 ### Hybrid layer
 

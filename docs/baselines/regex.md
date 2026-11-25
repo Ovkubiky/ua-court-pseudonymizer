@@ -12,7 +12,7 @@ declension table. It does not use an LLM, pretrained NER model, GPU, or paid API
 | dev | 300 | 0.4519 | 0.4006 | 0.0765 | 0.8671 | 4.033 |
 | test_a | 526 | 0.4562 | 0.3991 | 0.0947 | 0.9261 | 6.751 |
 | test_b | 377 | 0.5226 | 0.4570 | 0.1004 | 0.9102 | 6.994 |
-| official | 240 | 0.4845 | 0.3916 | 0.2378 | 0.8241 | 3.041 |
+| reference | 240 | 0.4845 | 0.3916 | 0.2378 | 0.8241 | 3.041 |
 
 ## Improved Run
 
@@ -31,9 +31,9 @@ Compared with the first run:
 | dev | 0.4849 | 0.4519 | 0.3929 | 0.4006 |
 | test_a | 0.5192 | 0.4562 | 0.3947 | 0.3991 |
 | test_b | 0.6278 | 0.5226 | 0.4658 | 0.4570 |
-| official | 0.4713 | 0.4845 | 0.3146 | 0.3916 |
+| reference | 0.4713 | 0.4845 | 0.3146 | 0.3916 |
 
-Official per-type relaxed/strict F1:
+Reference per-type relaxed/strict F1:
 
 | PII type | Initial relaxed F1 | Improved relaxed F1 | Initial strict F1 | Improved strict F1 |
 |---|---:|---:|---:|---:|
@@ -63,7 +63,7 @@ institution/unit names, and number subtype/context matching.
 - Low person recall likely comes from name forms absent from the declension table.
 - Low address/number recall is not evidence that synthetic gold labels are wrong;
   it may reflect limited or incorrect baseline rules.
-- High deanonymization risk on an official domain indicates missed repeated person names.
+- High deanonymization risk on an reference domain indicates missed repeated person names.
 - Consistency is meaningful only where person mentions are found; no consistency
   improvement is inferred from strict/relaxed F1 alone.
 
@@ -76,12 +76,12 @@ First compare results with the gold labels:
    baseline patterns or the model baseline.
 2. If gold spans or synthetic case/gender metadata are grammatically wrong, fix
    `synth_utils.py` and regenerate.
-3. If the official test also exposes repeated-name or boundary weaknesses, that is
+3. If the reference test also exposes repeated-name or boundary weaknesses, that is
    primarily a model-rule issue rather than a training-data regeneration issue.
 
 ## Runtime and resource note
 
 Reported runtime is Python process inference time for the selected split.
 Peak traced-memory is an allocator estimate, not OS peak RSS.
-A final CPU/RAM measurement must use the complete official submission and
+A final CPU/RAM measurement must use the complete reference submission and
 `/usr/bin/time` on Linux or an equivalent Windows process-memory measurement.

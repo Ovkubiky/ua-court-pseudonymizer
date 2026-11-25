@@ -15,7 +15,7 @@ Three independent steps (each can be switched off for ablations):
 3. ``merge``  - a rule span replaces overlapping model spans of the same category (its boundaries are exact);
                 for a different category the rule wins unless the model span is ОСОБА.
 
-Every rule was designed from the task description and the synthetic train / dev data only; the official test is
+Every rule was designed from the PII definitions and the synthetic train / dev data only; the reference test is
 never used to choose or tune them.
 """
 from __future__ import annotations
@@ -105,7 +105,7 @@ NOT_ID_CTX = re.compile(r"(справ\w*|провадженн\w*|ЄДРПОУ|к
 ID_CTX = re.compile(r"(РНОКПП|ІПН|ідентифікаційн\w*|облікової картки|податков\w* номер\w*)\D{0,25}$", re.I)
 PASSPORT_CTX = re.compile(r"паспорт\w*|ID[- ]?карт\w*|посвідченн\w*|документ\w*, що посвідчує", re.I)
 PERSON_PHONE_CTX = re.compile(r"тел\w*|моб\w*|номер\w*|сім[- ]?карт\w*|абонент\w*|viber|telegram|whatsapp", re.I)
-OFFICIAL_DOMAIN = re.compile(r"(?:gov\.ua|court\.gov|rada\.gov|reyestr|zakon\.|minjust|ccu\.gov|npu\.gov|e-court)", re.I)
+REFERENCE_DOMAIN = re.compile(r"(?:gov\.ua|court\.gov|rada\.gov|reyestr|zakon\.|minjust|ccu\.gov|npu\.gov|e-court)", re.I)
 SOCIAL_URL = re.compile(r"(?:https?://)?(?:www\.)?(?:facebook\.com|fb\.com|instagram\.com|t\.me|tiktok\.com|youtube\.com|youtu\.be|x\.com|twitter\.com|"
                         r"vk\.com|ok\.ru|olx\.ua|linkedin\.com|threads\.net)/[^\s<>()«»\"“”,;]+", re.I)
 PLATE_L = "ABCEHIKMOPTXАВЕІКМНОРСТХ"
@@ -151,7 +151,7 @@ def rule_spans(text: str, person_spans: list[tuple[int, int, str]] | None = None
         add(m, "НОМЕР", "military_unit", 1)
 
     for m in re.finditer(r"(?<![\w.@-])[A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![\w-])", text):
-        if not OFFICIAL_DOMAIN.search(m.group(0)) and not ROLE_MAILBOX.match(m.group(0)) and not ORG_CTX.search(left(m.start(), 120)) \
+        if not REFERENCE_DOMAIN.search(m.group(0)) and not ROLE_MAILBOX.match(m.group(0)) and not ORG_CTX.search(left(m.start(), 120)) \
                 and not LEGAL_ENTITY.search(left(m.start(), 70)):
             add(m, "ІНФОРМАЦІЯ", "email")
     for m in SOCIAL_URL.finditer(text):

@@ -157,17 +157,17 @@ def main() -> None:
             raise AssertionError(f"Self-check failed for {split}: {score}")
         print(f"{split}: self-check {score:.1f}")
 
-    official_test = ROOT / "data" / "test" / "court_cases.jsonl"
-    if official_test.exists():
-        official_rows = load_jsonl(official_test)
-        official_ids = {str(row["id"]) for row in official_rows}
+    reference_test = ROOT / "data" / "test" / "court_cases.jsonl"
+    if reference_test.exists():
+        reference_rows = load_jsonl(reference_test)
+        reference_ids = {str(row["id"]) for row in reference_rows}
         for split, ids in split_ids.items():
-            overlap = ids & official_ids
+            overlap = ids & reference_ids
             if overlap:
                 raise AssertionError(
-                    f"{split} overlaps the official test on {len(overlap)} IDs"
+                    f"{split} overlaps the reference test on {len(overlap)} IDs"
                 )
-        print("official test: no document-ID overlap")
+        print("reference test: no document-ID overlap")
 
     verify_name_pool_separation()
 

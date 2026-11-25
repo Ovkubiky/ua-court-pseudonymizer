@@ -1,5 +1,5 @@
-# Data and generated artifacts live in the HF dataset repo ovkubiky/ua-court-pseudonymizer-artifacts (see README).
-# organizers' data and everything we generate from it
+# Data and generated artifacts live in the HF dataset repo ua-court-pseudonymizer/ua-court-pseudonymizer-artifacts (see README).
+# external data and everything we generate from it
 data/
 # model checkpoints and predictions
 baselines/ner_*/

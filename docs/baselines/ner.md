@@ -25,12 +25,12 @@ Document counts:
 | dev | 300 |
 | test_a | 526 |
 | test_b | 377 |
-| official | 240 |
+| reference | 240 |
 
 Only `train.jsonl` supplied gradient updates. Only `dev.jsonl` was used for
 checkpoint selection. `test_a` and `test_b` were evaluated only after training
-and selection were fixed. The official file was used for one final fixed-model
-evaluation after all internal evaluations. No official `pseudonymized`,
+and selection were fixed. The reference file was used for one final fixed-model
+evaluation after all internal evaluations. No reference `pseudonymized`,
 `annotations`, or `annotations_by_pseudonym` field was used as model input.
 
 The synthetic verifier passed for all splits, including duplicate-ID checks,
@@ -83,7 +83,7 @@ The exact pretrained identifier was captured as
 | dev | 0.9860 | 0.9777 | 0.0136 | 0.8706 |
 | test_a | 0.9665 | 0.9598 | 0.1754 | 0.9291 |
 | test_b | 0.9681 | 0.9627 | 0.1883 | 0.9119 |
-| official | 0.7479 | 0.6632 | 0.1543 | 0.8185 |
+| reference | 0.7479 | 0.6632 | 0.1543 | 0.8185 |
 
 Raw evaluator JSON files are under `baselines/ner_xlm_roberta/metrics/`.
 
@@ -105,26 +105,26 @@ Relaxed NER results:
 | test_b | АДРЕСА | 0.9929 | 1.0000 | 0.9965 |
 | test_b | НОМЕР | 0.9749 | 0.9592 | 0.9670 |
 | test_b | ІНФОРМАЦІЯ | 0.9882 | 0.9852 | 0.9867 |
-| official | ОСОБА | 0.9906 | 0.9313 | 0.9600 |
-| official | АДРЕСА | 0.8790 | 0.4678 | 0.6106 |
-| official | НОМЕР | 0.9274 | 0.7718 | 0.8425 |
-| official | ІНФОРМАЦІЯ | 0.9459 | 0.4167 | 0.5785 |
+| reference | ОСОБА | 0.9906 | 0.9313 | 0.9600 |
+| reference | АДРЕСА | 0.8790 | 0.4678 | 0.6106 |
+| reference | НОМЕР | 0.9274 | 0.7718 | 0.8425 |
+| reference | ІНФОРМАЦІЯ | 0.9459 | 0.4167 | 0.5785 |
 
 ## Comparison with regex baseline
 
-The same official evaluator was used. Cosine similarity was not measured.
+The same reference evaluator was used. Cosine similarity was not measured.
 
 | Split | Neural relaxed F1 | Regex relaxed F1 | Neural strict F1 | Regex strict F1 |
 |---|---:|---:|---:|---:|
 | dev | 0.9860 | 0.4519 | 0.9777 | 0.4006 |
 | test_a | 0.9665 | 0.4562 | 0.9598 | 0.3991 |
 | test_b | 0.9681 | 0.5226 | 0.9627 | 0.4570 |
-| official | 0.7479 | 0.4845 | 0.6632 | 0.3916 |
+| reference | 0.7479 | 0.4845 | 0.6632 | 0.3916 |
 
 The neural model is substantially higher on all evaluated synthetic splits and
-also on this official run. This comparison is not a claim that the synthetic
-gain predicts future real-world performance. The regex official score is
-exploratory because regex changes used the official set. The neural official
+also on this reference run. This comparison is not a claim that the synthetic
+gain predicts future real-world performance. The regex reference score is
+exploratory because regex changes used the reference set. The neural reference
 score is a single final result.
 
 ## Runtime and memory measurements
@@ -137,13 +137,13 @@ Internal inference was run on GPU:
 | test_a | 526 | 34.97 |
 | test_b | 377 | 37.27 |
 
-Official inference was run on CPU with `--cpu --offline` and completed in
+Reference inference was run on CPU with `--cpu --offline` and completed in
 1,243.19 seconds by the script's inference timer; an outer wall measurement
 reported 1,248.47 seconds (20.81 minutes). Linux process child maximum RSS was
 1,692,544 KB (approximately 1.69 GB). The script's traced allocator peak was
 2,202,469 bytes, which is not process RSS and is not comparable to it.
 
-These measurements cover the 240-document official set and demonstrate that
+These measurements cover the 240-document reference set and demonstrate that
 this implementation completes within the stated 2-hour limit in this environment.
 RSS was measured with `resource.getrusage(RUSAGE_CHILDREN)`,
 `ru_maxrss`, on Linux; this is a process-wide high-water mark but may not include
@@ -151,17 +151,17 @@ every non-Python resource precisely.
 
 ## Error analysis
 
-The largest official-domain weakness is address and information recall. On the
-official set, address relaxed recall is 0.4678 and information relaxed recall is
+The largest reference-domain weakness is address and information recall. On the
+reference set, address relaxed recall is 0.4678 and information relaxed recall is
 0.4167. Person recall remains high at 0.9313.
 
-One official example was document `116258650`. The model missed several repeated
+One reference example was document `116258650`. The model missed several repeated
 office/address spans such as:
 `по вулиці Великій Перспективній, буд. 56, кв. 14, м. Кропивницький, Кіровоградська область`
 and the date `2020-05-13`. This indicates boundary and rare-domain coverage
 issues despite strong synthetic performance.
 
-The model also had 133 leaked persons among 862 in the official deanonymization
+The model also had 133 leaked persons among 862 in the reference deanonymization
 metric. The exact linking behavior should therefore be treated cautiously.
 
 ## Pseudonym and linking behavior
@@ -173,18 +173,18 @@ key. This is conservative mention linking, not full cross-document entity
 resolution. Pseudonyms are numbered deterministically and spans are sorted by
 character offset.
 
-The strict official result remains lower than relaxed F1, especially for addresses
+The strict reference result remains lower than relaxed F1, especially for addresses
 and information, showing that exact character boundaries are a material weakness.
 
 ## Limitations
 
 - Synthetic train/dev/test figures are not an untouched real-domain estimate.
-- The official set has a court-domain and writing-style shift from synthetic data.
-- Address and institution/date recognition has lower official recall.
+- The reference set has a court-domain and writing-style shift from synthetic data.
+- Address and institution/date recognition has lower reference recall.
 - Person linking uses surname normalization and exact normalized surfaces only.
 - Inflected names without an available surname table entry may receive separate
   pseudonyms.
-- The official result is a single final evaluation and must not be used to tune
+- The reference result is a single final evaluation and must not be used to tune
   the neural model.
 - Neural training is not guaranteed to be perfectly deterministic across GPUs.
 
@@ -202,8 +202,8 @@ python scripts/ner_baseline.py infer --split test_a \
   --output baselines/ner_xlm_roberta/predictions/test_a.jsonl
 python scripts/ner_baseline.py infer --split test_b \
   --output baselines/ner_xlm_roberta/predictions/test_b.jsonl
-python scripts/ner_baseline.py infer --split official --cpu --offline \
-  --output baselines/ner_xlm_roberta/predictions/official.jsonl
+python scripts/ner_baseline.py infer --split reference --cpu --offline \
+  --output baselines/ner_xlm_roberta/predictions/reference.jsonl
 python scripts/ner_baseline.py evaluate --split dev \
   --predictions baselines/ner_xlm_roberta/predictions/dev.jsonl \
   --output baselines/ner_xlm_roberta/metrics/dev.json
@@ -213,7 +213,7 @@ python scripts/ner_baseline.py evaluate --split test_a \
 python scripts/ner_baseline.py evaluate --split test_b \
   --predictions baselines/ner_xlm_roberta/predictions/test_b.jsonl \
   --output baselines/ner_xlm_roberta/metrics/test_b.json
-python scripts/ner_baseline.py evaluate --split official \
-  --predictions baselines/ner_xlm_roberta/predictions/official.jsonl \
-  --output baselines/ner_xlm_roberta/metrics/official.json
+python scripts/ner_baseline.py evaluate --split reference \
+  --predictions baselines/ner_xlm_roberta/predictions/reference.jsonl \
+  --output baselines/ner_xlm_roberta/metrics/reference.json
 ```

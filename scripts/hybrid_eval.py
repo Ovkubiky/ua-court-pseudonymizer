@@ -6,7 +6,7 @@
     # ablation on raw model spans written by `ner_baseline.py infer --raw-output ...`
     python scripts/hybrid_eval.py ablation --truth data/synthetic/dev.jsonl --raw baselines/.../dev.raw.jsonl
 
-The official test is refused unless --final is given: it must be scored once, after every choice is fixed.
+The reference test is refused unless --final is given: it must be scored once, after every choice is fixed.
 """
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def assign(spans: list[tuple[int, int, str]], text: str) -> list[dict]:
 def guard(paths: list[Path], final: bool) -> None:
     for p in paths:
         if "test/court_cases" in str(p).replace("\\", "/") and not final:
-            raise SystemExit(f"{p} is the official test: pass --final only for the single final evaluation")
+            raise SystemExit(f"{p} is the reference test: pass --final only for the single final evaluation")
 
 
 def table(res: dict, title: str) -> None:

@@ -460,13 +460,13 @@ def infer(args: argparse.Namespace) -> None:
         "dev": data_dir / "dev.jsonl",
         "test_a": data_dir / "test_a.jsonl",
         "test_b": data_dir / "test_b.jsonl",
-        "official": ROOT / "data" / "test" / "court_cases.jsonl",
+        "reference": ROOT / "data" / "test" / "court_cases.jsonl",
     }
     if args.split not in split_paths:
         raise AssertionError(f"Unknown split: {args.split}")
     truth_path = split_paths[args.split]
     rows = load_jsonl(truth_path)
-    validate_rows(rows, truth_path, require_annotations=args.split != "official")
+    validate_rows(rows, truth_path, require_annotations=args.split != "reference")
     checkpoint = args.checkpoint
     if not checkpoint.is_absolute():
         checkpoint = ROOT / checkpoint
@@ -510,7 +510,7 @@ def evaluate(args: argparse.Namespace) -> None:
         "dev": data_dir / "dev.jsonl",
         "test_a": data_dir / "test_a.jsonl",
         "test_b": data_dir / "test_b.jsonl",
-        "official": ROOT / "data" / "test" / "court_cases.jsonl",
+        "reference": ROOT / "data" / "test" / "court_cases.jsonl",
     }
     truth = truth_paths[args.split]
     predictions = load_jsonl(prediction_path)
@@ -520,7 +520,7 @@ def evaluate(args: argparse.Namespace) -> None:
         require_annotations=False,
     ) if False else None
     truth_rows = load_jsonl(truth)
-    if args.split != "official":
+    if args.split != "reference":
         validate_rows(truth_rows, truth)
     original_by_id = {str(row["id"]): row["original"] for row in truth_rows}
     for prediction in predictions:
@@ -568,7 +568,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.set_defaults(func=train)
 
     infer_parser = subparsers.add_parser("infer", help="Write JSONL predictions for a split")
-    infer_parser.add_argument("--split", choices=("train", "dev", "test_a", "test_b", "official"), required=True)
+    infer_parser.add_argument("--split", choices=("train", "dev", "test_a", "test_b", "reference"), required=True)
     infer_parser.add_argument("--checkpoint", type=Path, default=Path("baselines/ner_xlm_roberta/selected"))
     infer_parser.add_argument("--output", type=Path, required=True)
     infer_parser.add_argument("--max-length", type=int, default=256)
@@ -585,7 +585,7 @@ def build_parser() -> argparse.ArgumentParser:
     infer_parser.set_defaults(func=infer)
 
     evaluate_parser = subparsers.add_parser("evaluate", help="Evaluate JSONL predictions with data/evaluate.py")
-    evaluate_parser.add_argument("--split", choices=("dev", "test_a", "test_b", "official"), required=True)
+    evaluate_parser.add_argument("--split", choices=("dev", "test_a", "test_b", "reference"), required=True)
     evaluate_parser.add_argument("--predictions", type=Path, required=True)
     evaluate_parser.add_argument("--output", type=Path, required=True)
     evaluate_parser.add_argument("--data-dir", type=Path, default=Path("data/synthetic"))

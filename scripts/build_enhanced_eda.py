@@ -33,8 +33,8 @@ def main() -> None:
     notebook["cells"] = [
         markdown(
             "# Enhanced Exploratory Data Analysis\n\n"
-            "This notebook analyzes the official test set and synthetic train/dev/test splits. "
-            "Official-test annotations are used only for descriptive evaluation and reporting."
+            "This notebook analyzes the reference test set and synthetic train/dev/test splits. "
+            "Reference-test annotations are used only for descriptive evaluation and reporting."
         ),
         code(
             'import json\n'
@@ -129,26 +129,26 @@ def main() -> None:
             'rare = subtype_df.loc[["test_b", "train"]].T\n'
             'rare[rare.max(axis=1) >= 50].sort_values("test_b", ascending=False).head(20)\n'
         ),
-        markdown("## 7. Official-test distribution"),
+        markdown("## 7. Reference-test distribution"),
         code(
-            'official = load_jsonl(ROOT / "data" / "test" / "court_cases.jsonl")\n'
-            'official_anns = [a for r in official for a in r["annotations"]]\n'
-            'official_types = Counter(a["pseudonym"].split("_", 1)[0].strip() for a in official_anns)\n'
-            'pd.DataFrame({"PII type": PII_TYPES, "mentions": [official_types[t] for t in PII_TYPES]})\n'
+            'reference = load_jsonl(ROOT / "data" / "test" / "court_cases.jsonl")\n'
+            'reference_anns = [a for r in reference for a in r["annotations"]]\n'
+            'reference_types = Counter(a["pseudonym"].split("_", 1)[0].strip() for a in reference_anns)\n'
+            'pd.DataFrame({"PII type": PII_TYPES, "mentions": [reference_types[t] for t in PII_TYPES]})\n'
         ),
         markdown("## 8. Domain shift"),
         code(
             'domain_df = pd.DataFrame([\n'
             '    {"dataset": "synthetic_train", "documents": 4895, "median_chars": summary_df.loc[summary_df.split == "train", "median_document_length"].iloc[0]},\n'
             '    {"dataset": "synthetic_dev", "documents": 300, "median_chars": summary_df.loc[summary_df.split == "dev", "median_document_length"].iloc[0]},\n'
-            '    {"dataset": "official_test", "documents": len(official), "median_chars": int(pd.Series([len(r["original"]) for r in official]).median())},\n'
+            '    {"dataset": "reference_test", "documents": len(reference), "median_chars": int(pd.Series([len(r["original"]) for r in reference]).median())},\n'
             '])\n'
             'domain_df\n'
         ),
         markdown(
             "## 9. Findings\n\n"
             "- Synthetic test_b is intentionally enriched for rare subtypes.\n"
-            "- Official test is a separate domain and must not be used for model selection or tuning.\n"
+            "- Reference test is a separate domain and must not be used for model selection or tuning.\n"
             "- Person-case confidence and gender-from-context flags identify likely quality weak points.\n"
             "- Clear-text names are additional person annotations and require a separate error analysis.\n"
             "- Address-region consistency, linked person identifiers, and informal-language coverage remain to be measured."

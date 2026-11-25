@@ -1,4 +1,4 @@
-"""Build an English quality report from the synthetic and official datasets."""
+"""Build an English quality report from the synthetic and reference datasets."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 SYNTHETIC_DIR = ROOT / "data" / "synthetic"
-OFFICIAL_TEST = ROOT / "data" / "test" / "court_cases.jsonl"
+REFERENCE_TEST = ROOT / "data" / "test" / "court_cases.jsonl"
 PII_TYPES = ("ОСОБА", "АДРЕСА", "НОМЕР", "ІНФОРМАЦІЯ")
 SPLITS = ("train", "dev", "test_a", "test_b")
 
@@ -76,13 +76,13 @@ def main() -> None:
     stats_csv = ROOT / "data" / "synthetic" / "quality_report.csv"
     stats_df.to_csv(stats_csv, index=False)
 
-    official_rows = load_jsonl(OFFICIAL_TEST)
-    official_annotations = [
-        ann for row in official_rows for ann in row["annotations"]
+    reference_rows = load_jsonl(REFERENCE_TEST)
+    reference_annotations = [
+        ann for row in reference_rows for ann in row["annotations"]
     ]
-    official_types = Counter(
+    reference_types = Counter(
         ann["pseudonym"].split("_", 1)[0].strip()
-        for ann in official_annotations
+        for ann in reference_annotations
     )
 
     issue_rows = [
@@ -132,16 +132,16 @@ def main() -> None:
             "status": "Planned",
         },
         {
-            "issue": "Small official-test type coverage",
+            "issue": "Small reference-test type coverage",
             "frequency": "168 ІНФОРМАЦІЯ entities",
             "impact": "Subtype-level conclusions have wide confidence intervals.",
-            "evidence": "Official test statistics.",
+            "evidence": "Reference test statistics.",
             "current_resolution": "Rare-subtype test_b is used for internal measurement.",
             "next_action": "Report confidence intervals and per-subtype errors.",
             "status": "Mitigated",
         },
         {
-            "issue": "Official test domain shift",
+            "issue": "Reference test domain shift",
             "frequency": "240 decisions; 97.5% Supreme Court cassation",
             "impact": "A court-model may not generalize to the broad training domain.",
             "evidence": "data_stats.ipynb and docs/DECISION_LOG.md.",
@@ -188,20 +188,20 @@ def main() -> None:
 
     lines += [
         "",
-        "## Official Test Coverage",
+        "## Reference Test Coverage",
         "",
-        f"- Documents: {len(official_rows)}.",
-        f"- Total annotations: {len(official_annotations)}.",
+        f"- Documents: {len(reference_rows)}.",
+        f"- Total annotations: {len(reference_annotations)}.",
         "",
-        "| PII type | Official-test mentions |",
+        "| PII type | Reference-test mentions |",
         "|---|---:|",
     ]
     for pii_type in PII_TYPES:
-        lines.append(f"| {pii_type} | {official_types.get(pii_type, 0)} |")
+        lines.append(f"| {pii_type} | {reference_types.get(pii_type, 0)} |")
 
     lines += [
         "",
-        "The official test contains a malformed leading-space address string in one raw count;",
+        "The reference test contains a malformed leading-space address string in one raw count;",
         "normalized generated counts use exact PII prefixes.",
         "",
         "## PII Subtypes",
@@ -245,7 +245,7 @@ def main() -> None:
         "3. Expand name, patronymic, and surname coverage.",
         "4. Improve clear-text surname-only and first-name-only name detection.",
         "5. Add per-subtype precision and recall after baseline training.",
-        "6. Keep official-test annotations locked from training and tuning.",
+        "6. Keep reference-test annotations locked from training and tuning.",
         "",
         "## Machine-Readable Outputs",
         "",

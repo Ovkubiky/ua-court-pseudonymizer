@@ -27,7 +27,7 @@ court information while masking every identifying detail of natural persons.
 - Fully local CPU inference.
 - Offline execution after setup.
 - Deployment and execution within 8 GB RAM and a 2-hour limit for the 240-document
-  official test set.
+  reference test set.
 
 ### Out of scope
 
@@ -71,7 +71,7 @@ offsets in JSON Lines format:
 
 ## Data
 
-### Official test data
+### Reference test data
 
 `data/test/court_cases.jsonl` contains 240 annotated decisions. It has:
 
@@ -82,7 +82,7 @@ offsets in JSON Lines format:
 - 168 `ІНФОРМАЦІЯ_*` entities;
 - 864 unique persons.
 
-The official test fields are:
+The reference test fields are:
 
 - `id`: the Unified State Register case identifier;
 - `pseudonymized`: a version from the register;
@@ -90,7 +90,7 @@ The official test fields are:
 - `annotations`: character-level PII spans;
 - `annotations_by_pseudonym`: the same annotations grouped by pseudonym.
 
-The file `data/evaluate.py` implements the task's official scoring:
+The file `data/evaluate.py` implements the reference scoring:
 
 - NER relaxed macro F1;
 - NER strict macro F1;
@@ -102,18 +102,17 @@ The `pseudonymized` and `annotations` fields must remain test-only. They must ne
 used for model training or parameter selection.
 
 
-The organizers' Google Drive folder also contains two earlier versions of the test
-(`6.10.2026_court_cases.jsonl`, `8.10.2026_court_cases.jsonl`). `court_cases.jsonl` is the
-latest one (a few annotation fixes); always evaluate on it.
+Two earlier versions of the test exist (`6.10.2026_court_cases.jsonl`, `8.10.2026_court_cases.jsonl`).
+`court_cases.jsonl` is the latest one (a few annotation fixes); always evaluate on it.
 
 ### Training data
 
-The organizer-provided court corpus is `data/train/2024-court-decisions.parquet`. It
+The court corpus is `data/train/2024-court-decisions.parquet`. It
 contains 44,758 deduplicated Ukrainian court decisions from 2024. The texts contain
 placeholders instead of PII, for example `ОСОБА_1`, `АДРЕСА_2`, and `НОМЕР_1`. It is
 converted into labelled synthetic data by `notebooks/generate_data.ipynb`.
 
-The public NER datasets proposed in the task description (NER-UK 2.0, Ukr-Synth,
+The public NER datasets (NER-UK 2.0, Ukr-Synth,
 Polyglot-NER, WikiAnn) are not used yet.
 
 ### External resources
@@ -130,21 +129,21 @@ that are not in our dev / test splits.
 
 Git holds code, hand-made resources and documentation only. Everything that a command can regenerate
 (synthetic data, generator resources, predictions, model checkpoints) lives in the private HF dataset repo
-[`ovkubiky/ua-court-pseudonymizer-artifacts`](https://huggingface.co/datasets/ovkubiky/ua-court-pseudonymizer-artifacts):
+[`ua-court-pseudonymizer/ua-court-pseudonymizer-artifacts`](https://huggingface.co/datasets/ua-court-pseudonymizer/ua-court-pseudonymizer-artifacts):
 
 ```bash
 hf auth login
-hf download ovkubiky/ua-court-pseudonymizer-artifacts --repo-type dataset --local-dir artifacts
+hf download ua-court-pseudonymizer/ua-court-pseudonymizer-artifacts --repo-type dataset --local-dir artifacts
 mkdir -p data/synthetic data/synthetic_v1
 cp artifacts/synthetic/v2/* data/synthetic/ && cp artifacts/synthetic/v1/* data/synthetic_v1/
 cp artifacts/resources/*.csv notebooks/resources/
 ```
 
 Upload new checkpoints / predictions to `models/<name>/` and `preds/<name>/` of the same repo.
-The official test and the organizers' parquet are not stored there; get them from the organizers:
+The reference test and the court-decision parquet are not stored there; download them from the source dataset folder:
 
 ```bash
-# organizer files (Google Drive folder from the task description)
+# test set, evaluator and training corpus (Google Drive folder)
 uvx gdown --folder "https://drive.google.com/drive/folders/1T7Ub_6xuS5zwP5LioX745dnfQ5JrGkEg" -O data
 # name dictionary for the v2 generator
 git clone --depth 1 https://github.com/lang-uk/name_freq_dict_uk data/external/name_freq_dict_uk
@@ -178,7 +177,7 @@ the same files byte for byte. The pipeline:
 2. applies case and gender rules to Ukrainian person names (`pymorphy3` + context rules);
 3. labels clear-text names that remain in the original training data;
 4. generates valid dates, IBANs (mod-97), РНОКПП (checksum), addresses, and IDs;
-5. writes character-level annotations and checks them with the official evaluator.
+5. writes character-level annotations and checks them with the reference evaluator.
 
 ### Data versions
 
@@ -206,13 +205,13 @@ The inflected lexicon is automatic (pymorphy3), not manually reviewed like
 
 ## Known Data Findings
 
-- 48% of official-test persons appear in two to five surface forms in one document.
+- 48% of reference-test persons appear in two to five surface forms in one document.
 - `ІНФОРМАЦІЯ` is mostly birth dates and institution/unit names.
 - `НОМЕР` includes phones, РНОКПП values, license plates, IBANs, and passports.
 - Real judge, clerk, lawyer, and notary names remain in some training documents.
 - The register also leaves some personal e-mails and РНОКПП unmasked; the synthetic gold
   misses them, so a few "false positives" on synthetic data are real PII.
-- The official test is mostly Supreme Court cassation decisions, while training spans
+- The reference test is mostly Supreme Court cassation decisions, while training spans
   multiple courts and proceeding types.
 - About 25% of synthetic name-case decisions are not confident and fall back to the
   nominative case. Feminine accusative names are the weakest case.
@@ -227,8 +226,8 @@ Data quality report: [`docs/data-quality.md`](docs/data-quality.md) (written for
 
 [`scripts/regex_baseline.py`](scripts/regex_baseline.py): regular expressions plus the
 reviewed name table; no model. Results in [`docs/baselines/regex.md`](docs/baselines/regex.md).
-Official relaxed macro F1 0.4845. **Caveat:** the "improved" regex rules were compared on the
-official test, so that number is exploratory, not a clean held-out score.
+Reference relaxed macro F1 0.4845. **Caveat:** the "improved" regex rules were compared on the
+reference test, so that number is exploratory, not a clean held-out score.
 
 ### Neural NER baseline
 
@@ -236,7 +235,7 @@ official test, so that number is exploratory, not a clean held-out score.
 BIO token-classification head, trained on v1 synthetic data (RTX 4090, 26 min).
 Results in [`docs/baselines/ner.md`](docs/baselines/ner.md).
 
-| Official test (single final run) | P | R | F1 |
+| Reference test (single final run) | P | R | F1 |
 |---|---:|---:|---:|
 | ОСОБА | 0.991 | 0.931 | 0.960 |
 | АДРЕСА | 0.879 | 0.468 | 0.611 |
@@ -244,7 +243,7 @@ Results in [`docs/baselines/ner.md`](docs/baselines/ner.md).
 | ІНФОРМАЦІЯ | 0.946 | 0.417 | 0.579 |
 | **Macro** | | | **0.748** (strict 0.663) |
 
-CPU inference on the official test: 21 min, 1.7 GB RSS.
+CPU inference on the reference test: 21 min, 1.7 GB RSS.
 
 The trained weights are **not** in git. Checkpoints go to `models/` of the HF artifacts repo;
 place the selected one in `baselines/ner_xlm_roberta/selected/` (or pass `--checkpoint`).
@@ -276,7 +275,7 @@ python scripts/hybrid_eval.py rules --truth data/synthetic/dev.jsonl
 python scripts/hybrid_eval.py ablation --truth data/synthetic/dev.jsonl --raw dev.raw.jsonl
 ```
 
-`hybrid_eval.py` refuses the official test unless `--final` is passed.
+`hybrid_eval.py` refuses the reference test unless `--final` is passed.
 
 ## Setup
 
@@ -308,10 +307,10 @@ python scripts/ner_baseline.py infer --split dev --checkpoint baselines/ner_xlm_
   --output preds/dev.jsonl --raw-output preds/dev.raw.jsonl
 python scripts/hybrid_eval.py ablation --truth data/synthetic/dev.jsonl --raw preds/dev.raw.jsonl
 
-# official test: once, after all choices are fixed
-python scripts/ner_baseline.py infer --split official --cpu --offline \
-  --checkpoint baselines/ner_xlm_roberta_v2/selected --output preds/official.jsonl
-python data/evaluate.py data/test/court_cases.jsonl preds/official.jsonl
+# reference test: once, after all choices are fixed
+python scripts/ner_baseline.py infer --split reference --cpu --offline \
+  --checkpoint baselines/ner_xlm_roberta_v2/selected --output preds/reference.jsonl
+python data/evaluate.py data/test/court_cases.jsonl preds/reference.jsonl
 ```
 
 Manual review UI: `cd notebooks && python review_app.py`, then open `http://localhost:8765`.
@@ -333,7 +332,7 @@ Done:
 - self-check against `data/evaluate.py`, split and name-pool separation checks;
 - manual review of 20 dev documents ([`docs/manual-review.md`](docs/manual-review.md));
 - regex baseline;
-- neural NER baseline (XLM-R base, v1 data): official relaxed F1 0.748;
+- neural NER baseline (XLM-R base, v1 data): reference relaxed F1 0.748;
 - hybrid layer: rules for structured PII and span-boundary repair;
 - CPU / RAM / time check of the neural baseline (21 min, 1.7 GB).
 
@@ -364,11 +363,11 @@ python data/evaluate.py data/test/court_cases.jsonl submission.jsonl [--cosine]
 
 ## Anti-Leakage Rules
 
-- Never use official-test `annotations` or `pseudonymized` text for training, rule design or tuning.
-- Never tune hyperparameters, thresholds or rules on the official test.
+- Never use reference-test `annotations` or `pseudonymized` text for training, rule design or tuning.
+- Never tune hyperparameters, thresholds or rules on the reference test.
 - Keep all splits disjoint by document ID; reuse `data/synthetic/splits.csv`.
 - Keep synthetic test names outside the synthetic training name pool.
-- Report the official-test result only after model selection and training are fixed.
+- Report the reference-test result only after model selection and training are fixed.
 
 ## Repository Layout
 
@@ -390,10 +389,12 @@ python data/evaluate.py data/test/court_cases.jsonl submission.jsonl [--cosine]
 | `scripts/ner_baseline.py` | XLM-R training / inference / evaluation |
 | `scripts/hybrid.py`, `scripts/hybrid_eval.py` | Hybrid layer and its evaluation |
 | `scripts/verify_synthetic_data.py` | Structural and anti-leakage checks |
-| `data/evaluate.py` | Official task evaluator (not in git) |
+| `scripts/vast_train.sh` | One-command GPU training and artifact upload (vast.ai) |
+| `tests/` | Unit tests for the hybrid layer and NER baseline (`python -m pytest -q tests`) |
+| `data/evaluate.py` | Reference evaluator (not in git) |
 
 ## License
 
-No licence has been chosen yet; the task requires publishing the solution under an open
+No licence has been chosen yet; the solution is to be published under an open
 licence, so a `LICENSE` file must be added before the final release. Note that
 `lang-uk/name_freq_dict_uk` is GPL-3.0 and dataset licences must be listed in the release.

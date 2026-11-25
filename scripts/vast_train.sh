@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Train XLM-R on synthetic v2 (and v1 for comparison) on a rented GPU, predict the internal splits,
-# and upload checkpoints + predictions to the HF artifacts repo. The official test is NOT touched.
+# and upload checkpoints + predictions to the HF artifacts repo. The reference test is NOT touched.
 #
 # On the GPU machine:
 #   export HF_TOKEN=hf_...            # write token
@@ -11,7 +11,7 @@
 # VERSIONS="v2" to skip the v1 run.
 set -euo pipefail
 
-REPO=${HF_REPO:-ovkubiky/ua-court-pseudonymizer-artifacts}
+REPO=${HF_REPO:-ua-court-pseudonymizer/ua-court-pseudonymizer-artifacts}
 VERSIONS=${VERSIONS:-"v2 v1"}
 : "${HF_TOKEN:?set HF_TOKEN (write token) first}"
 

@@ -84,7 +84,7 @@ Before human review, the sample is checked against:
 - non-empty spans;
 - known PII-prefix types;
 - no overlapping annotation spans;
-- the existing official evaluator format.
+- the existing reference evaluator format.
 
 ## Machine-Readable Checklist
 

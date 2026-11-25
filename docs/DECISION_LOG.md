@@ -1,6 +1,6 @@
 # Decision log: building labelled training data
 
-**Goal.** Pseudonymize Ukrainian court decisions by finding `ОСОБА` / `АДРЕСА` / `НОМЕР` / `ІНФОРМАЦІЯ` spans with open models only, under these limits: CPU, ≤ 8 GB RAM, offline. This is a research project, so we aim at Ukrainian PII recognition in court texts in general, not at fitting the official test. Results are reported on two test sets: the official one and our own.
+**Goal.** Pseudonymize Ukrainian court decisions by finding `ОСОБА` / `АДРЕСА` / `НОМЕР` / `ІНФОРМАЦІЯ` spans with open models only, under these limits: CPU, ≤ 8 GB RAM, offline. This is a research project, so we aim at Ukrainian PII recognition in court texts in general, not at fitting the reference test. Results are reported on two test sets: the reference one and our own.
 
 ## Repository layout and how to run
 
@@ -22,11 +22,11 @@ python -m venv .venv
 .venv\Scripts\python -m ipykernel install --user --name nlp-anonymization --display-name "Python (nlp-anonymization)"
 ```
 
-The organizers' data is not in git. Put it under `data/`: `data/train/2024-court-decisions.parquet`, `data/test/court_cases.jsonl` and `data/evaluate.py`. Then run `generate_data.ipynb`. It reuses `data/synthetic/splits.csv` if that file exists and writes `data/synthetic/{train,dev,test_a,test_b}.jsonl` in about 20 s.
+The reference test and training corpus are not in git. Put it under `data/`: `data/train/2024-court-decisions.parquet`, `data/test/court_cases.jsonl` and `data/evaluate.py`. Then run `generate_data.ipynb`. It reuses `data/synthetic/splits.csv` if that file exists and writes `data/synthetic/{train,dev,test_a,test_b}.jsonl` in about 20 s.
 
 ## Stage 1: Look at the data (`data_stats.ipynb`)
 
-| | Train | Official test |
+| | Train | Reference test |
 |---|---|---|
 | Documents | 44,758 | 240 |
 | Labels | none: PII already replaced by placeholders (`ОСОБА_1`, …) | `original` + span annotations (3,685 entities) |
@@ -35,8 +35,8 @@ The organizers' data is not in git. Put it under `data/`: `data/train/2024-court
 Findings that shaped the data:
 - **Persons change form.** 48% of test persons appear in 2–5 surface forms within one document: different grammatical cases, full name vs initials.
 - **`ІНФОРМАЦІЯ` and `НОМЕР` mix subtypes.** `ІНФОРМАЦІЯ` is mostly birth dates (49%) and unit/institution names (24%). `НОМЕР` covers phones, tax IDs (ІПН), plates, IBANs and more.
-- **Real names are left in clear text.** In 64% of train documents, judges, clerks and lawyers are named openly. The task requires anonymizing every natural person, so these names must be labelled too.
-- **The official test is small.** 168 `ІНФОРМАЦІЯ` mentions give a ±7 pp confidence interval, which is too coarse for per-subtype conclusions.
+- **Real names are left in clear text.** In 64% of train documents, judges, clerks and lawyers are named openly. The goal is to anonymize every natural person, so these names must be labelled too.
+- **The reference test is small.** 168 `ІНФОРМАЦІЯ` mentions give a ±7 pp confidence interval, which is too coarse for per-subtype conclusions.
 
 **Decisions:**
 - Turn train into labelled data by filling the placeholders with fictional values. The span labels then come for free.
@@ -105,12 +105,12 @@ The inflected forms come from `name_declensions.csv`. It holds 144 rows generate
 | test_a | 526 | 8,139 | 471 | 589 | 450 | 1,835 | 78% |
 | test_b | 377 | 7,987 | 1,124 | 2,426 | 2,968 | 699 | 74% |
 
-The format is the same as the official test (`id`, `original`, `annotations`). Every set scores 1.0 against itself with `evaluate.py`, which confirms the format and offsets are correct.
+The format is the same as the reference test (`id`, `original`, `annotations`). Every set scores 1.0 against itself with `evaluate.py`, which confirms the format and offsets are correct.
 
 ## Stage 5: data v2 (more variety)
 
 The v1 generator drew every person from ~24 first names and ~20 surnames per pool, every street from 15 names, and
-filled unknown `ІНФОРМАЦІЯ` with a birth date even inside `ПрАТ «…»`. The official test was built from a large name
+filled unknown `ІНФОРМАЦІЯ` with a birth date even inside `ПрАТ «…»`. The reference test was built from a large name
 dictionary and a postal address base, and the v1 model's recall there was 0.47 (АДРЕСА) and 0.42 (ІНФОРМАЦІЯ).
 
 **Decisions (`DATA_VERSION = 2`, same documents and splits as v1):**

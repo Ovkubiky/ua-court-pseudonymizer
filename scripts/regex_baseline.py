@@ -297,9 +297,9 @@ def evaluate_split(name: str, path: Path) -> dict:
     tracemalloc.stop()
 
     sys.path.insert(0, str(ROOT / "data"))
-    import evaluate as official_evaluate
+    import evaluate as reference_evaluate
 
-    result = official_evaluate.evaluate(gold, predictions)
+    result = reference_evaluate.evaluate(gold, predictions)
     result["runtime_seconds"] = round(elapsed, 3)
     result["peak_traced_memory_mib"] = round(peak_bytes / 1024 / 1024, 2)
 
@@ -357,7 +357,7 @@ def markdown_report(summaries: list[dict]) -> str:
         "- Low person recall likely comes from name forms absent from the declension table.",
         "- Low address/number recall is not evidence that synthetic gold labels are wrong;",
         "  it may reflect limited or incorrect baseline rules.",
-        "- High deanonymization risk on an official domain indicates missed repeated person names.",
+        "- High deanonymization risk on an reference domain indicates missed repeated person names.",
         "- Consistency is meaningful only where person mentions are found; no consistency",
         "  improvement is inferred from strict/relaxed F1 alone.",
         "",
@@ -370,14 +370,14 @@ def markdown_report(summaries: list[dict]) -> str:
         "   baseline patterns or the model baseline.",
         "2. If gold spans or synthetic case/gender metadata are grammatically wrong, fix",
         "   `synth_utils.py` and regenerate.",
-        "3. If the official test also exposes repeated-name or boundary weaknesses, that is",
+        "3. If the reference test also exposes repeated-name or boundary weaknesses, that is",
         "   primarily a model-rule issue rather than a training-data regeneration issue.",
         "",
         "## Runtime and resource note",
         "",
         "Reported runtime is Python process inference time for the selected split.",
         "Peak traced-memory is an allocator estimate, not OS peak RSS.",
-        "A final CPU/RAM measurement must use the complete official submission and",
+        "A final CPU/RAM measurement must use the complete reference submission and",
         "`/usr/bin/time` on Linux or an equivalent Windows process-memory measurement.",
     ]
     return "\n".join(lines) + "\n"
@@ -386,7 +386,7 @@ def markdown_report(summaries: list[dict]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--official-only",
+        "--reference-only",
         action="store_true",
         help="Evaluate only data/test/court_cases.jsonl",
     )
@@ -397,9 +397,9 @@ def main() -> None:
         ("dev", ROOT / "data" / "synthetic" / "dev.jsonl"),
         ("test_a", ROOT / "data" / "synthetic" / "test_a.jsonl"),
         ("test_b", ROOT / "data" / "synthetic" / "test_b.jsonl"),
-        ("official", ROOT / "data" / "test" / "court_cases.jsonl"),
+        ("reference", ROOT / "data" / "test" / "court_cases.jsonl"),
     )
-    if args.official_only:
+    if args.reference_only:
         datasets = (datasets[-1],)
 
     summaries = []
